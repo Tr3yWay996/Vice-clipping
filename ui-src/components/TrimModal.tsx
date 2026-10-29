@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
 import {useEscape} from '../lib/escape';
@@ -15,9 +15,18 @@ import {clipTitle, type Clip, type Highlight} from '../lib/types';
 import {IconClose} from './Icons';
 import {InlineRename} from './InlineRename';
 import {t} from '../lib/i18n';
-
-/** The shortest selection a handle can leave behind. */
-const MIN_SELECTION = 0.5;
+import {VolumeControl, storedMuted, storedVolume} from './Viewer';
+import {
+  MIN_SELECTION,
+  lowerBound,
+  moveBoundary,
+  nearestBoundary,
+  nearestKeyframe,
+  snapSelection,
+  visibleKeyframes,
+  type Boundary,
+  type KeyframeInfo,
+} from '../lib/trimming';
 
 /**
  * Trim a clip down to a selection.
@@ -48,6 +57,22 @@ export function TrimModal({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const [paused, setPaused] = useState(true);
+  const [volume, setVolume] = useState(storedVolume);
+  const [muted, setMuted] = useState(storedMuted);
+  const [keyframes, setKeyframes] = useState<KeyframeInfo | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [showKeyframes, setShowKeyframes] = useState(false);
+  const [snapMessage, setSnapMessage] = useState<string | null>(null);
+  const [timelineWidth, setTimelineWidth] = useState(0);
+  const gesture = useRef<{
+    pointer: number;
+    x: number;
+    y: number;
+    handle?: Boundary;
+    moved: boolean;
+  } | null>(null);
   const [total, setTotal] = useState(0);
   const [selection, setSelection] = useState({start: 0, end: 0});
   const [playhead, setPlayhead] = useState(0);
@@ -85,6 +110,11 @@ export function TrimModal({
     const video = videoRef.current;
     if (!video || !clip) return;
     setTotal(0);
+    setPaused(true);
+    setDragging(null);
+    gesture.current = null;
+    setShowKeyframes(false);
+    setSnapMessage(null);
     setSelection({start: 0, end: 0});
     setPlayhead(0);
     setPreviewing(false);
@@ -101,6 +131,68 @@ export function TrimModal({
       video.load();
     };
   }, [clip]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.volume = volume;
+    video.muted = muted;
+    try {
+      localStorage.setItem('vice-volume', String(volume));
+      localStorage.setItem('vice-muted', muted ? '1' : '0');
+    } catch {
+      /* Storage is optional in native windows. */
+    }
+  }, [volume, muted, clip]);
+
+  useEffect(() => {
+    setKeyframes(null);
+    setAnalysisError(null);
+    if (!clip) return;
+    const controller = new AbortController();
+    setAnalyzing(true);
+    api
+      .keyframes(clip.slug, controller.signal)
+      .then((info) => {
+        if (!controller.signal.aborted) setKeyframes(info);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setAnalysisError(t('trim.keyframesUnavailable'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAnalyzing(false);
+      });
+    return () => controller.abort();
+  }, [clip]);
+
+  useEffect(() => {
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+    const measure = () => setTimelineWidth(timeline.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(timeline);
+    return () => observer.disconnect();
+  }, [clip]);
+
+  // Media timeupdate is deliberately infrequent. Paint a smooth playhead while
+  // playing and keep paused/seeked updates on the media events below.
+  useEffect(() => {
+    if (paused || !clip) return;
+    let frame: number;
+    const tick = () => {
+      if (videoRef.current) setPlayhead(videoRef.current.currentTime);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [paused, clip]);
+
+  const markers = useMemo(
+    () =>
+      showKeyframes ? visibleKeyframes(keyframes?.timestamps ?? [], total, timelineWidth) : [],
+    [showKeyframes, keyframes, total, timelineWidth],
+  );
 
   if (!clip) return null;
 
@@ -134,43 +226,122 @@ export function TrimModal({
     // read every ordinary frame near the start as a scrub and stutter.
     if (video.currentTime >= end - 0.05 || video.currentTime < start - 0.3) {
       video.currentTime = start;
+      setPlayhead(start);
       if (video.paused) playQuietly(video);
     }
   };
 
-  const beginDrag = (handle: 'start' | 'end') => (event: React.PointerEvent) => {
-    if (event.button !== 0 || !total) return;
+  const seek = (at: number) => {
+    const next = Math.max(0, Math.min(total, at));
+    // fastSeek may land on a different keyframe: boundaries require an exact seek.
+    if (videoRef.current) videoRef.current.currentTime = next;
+    setPlayhead(next);
+  };
+
+  const togglePlayback = () => {
+    const video = videoRef.current;
+    if (!video || !total) return;
+    if (video.paused) playQuietly(video);
+    else video.pause();
+  };
+
+  const updateBoundary = (handle: Boundary, at: number) => {
+    const next = moveBoundary(
+      selectionRef.current,
+      handle,
+      at,
+      total,
+      showKeyframes ? keyframes?.timestamps : undefined,
+    );
+    selectionRef.current = next;
+    setSelection(next);
+    setSnapMessage(null);
+    seek(next[handle]);
+  };
+
+  const timeAt = (clientX: number) => {
+    const rect = timelineRef.current?.getBoundingClientRect();
+    return rect?.width ? Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * total : 0;
+  };
+
+  const beginGesture = (event: React.PointerEvent<HTMLElement>, handle?: Boundary) => {
+    if (event.button !== 0 || !total || saving) return;
     event.preventDefault();
-    setDragging(handle);
-    if (previewingRef.current) stopPreview();
-
-    const apply = (clientX: number) => {
-      const rect = timelineRef.current?.getBoundingClientRect();
-      const video = videoRef.current;
-      if (!rect || !video) return;
-      const at = (Math.max(0, Math.min(rect.width, clientX - rect.left)) / rect.width) * total;
-      setSelection(prev => {
-        const next =
-          handle === 'start'
-            ? {...prev, start: Math.max(0, Math.min(at, prev.end - MIN_SELECTION))}
-            : {...prev, end: Math.min(total, Math.max(at, prev.start + MIN_SELECTION))};
-        selectionRef.current = next;
-        video.currentTime = handle === 'start' ? next.start : next.end;
-        return next;
-      });
+    event.stopPropagation();
+    stopPreview();
+    gesture.current = {
+      pointer: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      handle,
+      moved: false,
     };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(handle ?? null);
+  };
 
-    const move = (e: PointerEvent) => apply(e.clientX);
-    const up = () => {
-      window.removeEventListener('pointermove', move, true);
-      window.removeEventListener('pointerup', up, true);
-      window.removeEventListener('pointercancel', up, true);
-      setDragging(null);
-    };
-    apply(event.clientX);
-    window.addEventListener('pointermove', move, true);
-    window.addEventListener('pointerup', up, true);
-    window.addEventListener('pointercancel', up, true);
+  const moveGesture = (event: React.PointerEvent) => {
+    const current = gesture.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    current.moved ||= Math.hypot(event.clientX - current.x, event.clientY - current.y) >= 4;
+    if (current.handle) updateBoundary(current.handle, timeAt(event.clientX));
+    else if (current.moved) seek(timeAt(event.clientX));
+  };
+
+  const endGesture = (event: React.PointerEvent<HTMLElement>) => {
+    const current = gesture.current;
+    if (!current || current.pointer !== event.pointerId) return;
+    // Some engines coalesce all motion before pointerup.
+    current.moved ||= Math.hypot(event.clientX - current.x, event.clientY - current.y) >= 4;
+    if (event.type !== 'pointercancel' && event.type !== 'lostpointercapture') {
+      const at = timeAt(event.clientX);
+      if (current.handle) updateBoundary(current.handle, at);
+      else if (current.moved) seek(at);
+      else updateBoundary(nearestBoundary(selectionRef.current, at), at);
+    }
+    gesture.current = null;
+    setDragging(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const boundaryKey = (event: React.KeyboardEvent, handle: Boundary) => {
+    if (saving) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stopPreview();
+    const current = selectionRef.current[handle];
+    const direction = event.key === 'ArrowLeft' ? -1 : 1;
+    let at =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? total
+          : current + direction * (event.shiftKey ? 1 : 0.1);
+    if (showKeyframes && keyframes && event.key.startsWith('Arrow')) {
+      const keys = keyframes.timestamps;
+      const index = lowerBound(keys, current);
+      at =
+        direction < 0
+          ? (keys[index - 1] ?? current)
+          : (keys[keys[index] === current ? index + 1 : index] ?? current);
+    }
+    updateBoundary(handle, at);
+  };
+
+  const manualSnap = () => {
+    if (!keyframes) return;
+    const next = snapSelection(selectionRef.current, keyframes.timestamps, total);
+    if (!next) {
+      setSnapMessage(t('trim.noKeyframePair'));
+      return;
+    }
+    stopPreview();
+    selectionRef.current = next;
+    setSelection(next);
+    setSnapMessage(null);
+    seek(next.start);
   };
 
   const save = async (copy: boolean) => {
@@ -201,7 +372,7 @@ export function TrimModal({
   const endPct = pct(selection.end);
 
   return (
-    <div className="scrim" onMouseDown={e => e.target === e.currentTarget && close()}>
+    <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
         className="modal trim-modal"
         role="dialog"
@@ -219,7 +390,7 @@ export function TrimModal({
                 label={t('card.nameLabel')}
                 initial={pendingName ?? clipTitle(clip)}
                 onCancel={() => setRenamingTitle(false)}
-                onSubmit={name => {
+                onSubmit={(name) => {
                   setRenamingTitle(false);
                   setPendingName(name);
                 }}
@@ -233,7 +404,11 @@ export function TrimModal({
               </span>
             )}
           </h2>
-          <button type="button" className="modal-close" onClick={close} aria-label={t('common.close')}>
+          <button
+            type="button"
+            className="modal-close"
+            onClick={close}
+            aria-label={t('common.close')}>
             <IconClose size={15} />
           </button>
         </div>
@@ -243,9 +418,8 @@ export function TrimModal({
             <video
               ref={videoRef}
               className="trim-video"
-              controls
               playsInline
-              onLoadedMetadata={e => {
+              onLoadedMetadata={(e) => {
                 const seconds = Number.isFinite(e.currentTarget.duration)
                   ? e.currentTarget.duration
                   : 0;
@@ -256,6 +430,9 @@ export function TrimModal({
                 setPreparing(false);
               }}
               onTimeUpdate={onTimeUpdate}
+              onSeeked={onTimeUpdate}
+              onPlay={() => setPaused(false)}
+              onPause={() => setPaused(true)}
               onEnded={() => {
                 const video = videoRef.current;
                 if (!previewingRef.current || !video) return;
@@ -286,6 +463,36 @@ export function TrimModal({
             ) : null}
           </div>
 
+          <div className="trim-playback">
+            <button
+              type="button"
+              className="player-main"
+              disabled={!total}
+              onClick={togglePlayback}
+              aria-label={paused ? t('viewer.play') : t('viewer.pause')}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="currentColor"
+                aria-hidden="true">
+                {paused ? <path d="M4 2l10 6-10 6z" /> : <path d="M3 2h4v12H3zm6 0h4v12H9z" />}
+              </svg>
+            </button>
+            <span className="mono player-tc">
+              {timecode(playhead)} / {timecode(total)}
+            </span>
+            <VolumeControl
+              volume={volume}
+              muted={muted}
+              onChange={(next) => {
+                setVolume(next);
+                setMuted(false);
+              }}
+              onToggleMute={() => setMuted((previous) => !previous)}
+            />
+          </div>
+
           <div className="trim-readout">
             <span>
               {t('trim.in')} <b className="mono">{formatDuration(selection.start, true)}</b>
@@ -301,13 +508,56 @@ export function TrimModal({
             </span>
           </div>
 
-          <div className="trim-timeline" ref={timelineRef}>
+          <div
+            className="trim-timeline"
+            ref={timelineRef}
+            role="group"
+            aria-label={t('trim.seekTimeline')}
+            onPointerDown={(event) => beginGesture(event)}
+            onPointerMove={moveGesture}
+            onPointerUp={endGesture}
+            onPointerCancel={endGesture}
+            onLostPointerCapture={endGesture}>
+            <div
+              className="trim-seek"
+              role="slider"
+              tabIndex={0}
+              aria-label={t('trim.seekTimeline')}
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={playhead}
+              aria-valuetext={timecode(playhead)}
+              aria-disabled={!total || saving}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || saving) return;
+                if (event.key === ' ' || event.key === 'Enter') {
+                  event.preventDefault();
+                  togglePlayback();
+                }
+                if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+                  event.preventDefault();
+                  stopPreview();
+                  seek(
+                    event.key === 'Home'
+                      ? 0
+                      : event.key === 'End'
+                        ? total
+                        : playhead +
+                          (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 5 : 0.1),
+                  );
+                }
+              }}
+            />
             <div className="trim-track" />
             <div
               className="trim-selection"
               style={{left: `${startPct}%`, width: `${endPct - startPct}%`}}
             />
-            {highlights.map(h => (
+            <div className="trim-progress" style={{width: `${pct(playhead)}%`}} />
+            {markers.map((at) => (
+              <div key={at} className="trim-keyframe" style={{left: `${pct(at)}%`}} />
+            ))}
+            {highlights.map((h) => (
               <div
                 key={h.id}
                 className="trim-hl"
@@ -322,7 +572,14 @@ export function TrimModal({
               data-dragging={dragging === 'start' || undefined}
               style={{left: `${startPct}%`}}
               aria-label={t('trim.startOfSelection')}
-              onPointerDown={beginDrag('start')}
+              role="slider"
+              aria-valuemin={0}
+              aria-valuemax={Math.max(0, selection.end - Math.min(MIN_SELECTION, total))}
+              aria-valuenow={selection.start}
+              aria-valuetext={timecode(selection.start)}
+              disabled={saving || !total}
+              onKeyDown={(event) => boundaryKey(event, 'start')}
+              onPointerDown={(event) => beginGesture(event, 'start')}
             />
             <button
               type="button"
@@ -330,7 +587,14 @@ export function TrimModal({
               data-dragging={dragging === 'end' || undefined}
               style={{left: `${endPct}%`}}
               aria-label={t('trim.endOfSelection')}
-              onPointerDown={beginDrag('end')}
+              role="slider"
+              aria-valuemin={Math.min(total, selection.start + Math.min(MIN_SELECTION, total))}
+              aria-valuemax={total}
+              aria-valuenow={selection.end}
+              aria-valuetext={timecode(selection.end)}
+              disabled={saving || !total}
+              onKeyDown={(event) => boundaryKey(event, 'end')}
+              onPointerDown={(event) => beginGesture(event, 'end')}
             />
           </div>
 
@@ -338,6 +602,98 @@ export function TrimModal({
             <span>start {timecode(selection.start)}</span>
             <span>end {timecode(selection.end)}</span>
           </div>
+          <div className="trim-keyframe-actions">
+            <label className="trim-keyframe-toggle">
+              <input
+                type="checkbox"
+                checked={showKeyframes}
+                disabled={!keyframes?.timestamps.length || saving}
+                onChange={(event) => setShowKeyframes(event.target.checked)}
+              />
+              {t('trim.showKeyframes')}
+            </label>
+            <button
+              type="button"
+              className="btn btn-quiet btn-sm"
+              onClick={manualSnap}
+              disabled={!keyframes || !total || saving}>
+              {t('trim.snapKeyframes')}
+            </button>
+            {keyframes && total ? (
+              <span className="trim-alignment">
+                {[selection.start, selection.end].every((at) => {
+                  const key = nearestKeyframe(keyframes.timestamps, at);
+                  return key !== null && Math.abs(key - at) < 0.001;
+                })
+                  ? t('trim.keyframeAligned')
+                  : t('trim.notKeyframeAligned')}
+              </span>
+            ) : null}
+          </div>
+          <div className="trim-keyframe-message" role="status">
+            {analyzing ? t('trim.analyzingKeyframes') : (analysisError ?? snapMessage)}
+          </div>
+          <details className="trim-keyframe-info" key={clip.video_url}>
+            <summary>{t('trim.keyframeInformation')}</summary>
+            {keyframes ? (
+              <dl>
+                <div>
+                  <dt>{t('trim.totalKeyframes')}</dt>
+                  <dd>{keyframes.total_keyframes.toLocaleString()}</dd>
+                </div>
+                <div>
+                  <dt>{t('trim.totalFrames')}</dt>
+                  <dd>
+                    {keyframes.total_frames === null
+                      ? t('trim.unknown')
+                      : `${keyframes.total_frames.toLocaleString()}${keyframes.frames_estimated ? ` (${t('trim.estimated')})` : ''}`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('trim.keyframeRatio')}</dt>
+                  <dd>
+                    {keyframes.total_frames && keyframes.total_keyframes
+                      ? t('trim.ratioValue', {
+                          frames: (keyframes.total_frames / keyframes.total_keyframes).toFixed(1),
+                          percent: (
+                            (keyframes.total_keyframes / keyframes.total_frames) *
+                            100
+                          ).toFixed(2),
+                        }) + (keyframes.frames_estimated ? ` (${t('trim.estimated')})` : '')
+                      : t('trim.unknown')}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('trim.averageInterval')}</dt>
+                  <dd>
+                    {keyframes.average_interval === null
+                      ? t('trim.unknown')
+                      : t('trim.intervalSeconds', {seconds: keyframes.average_interval.toFixed(3)})}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('trim.intervalRange')}</dt>
+                  <dd>
+                    {keyframes.min_interval === null || keyframes.max_interval === null
+                      ? t('trim.unknown')
+                      : `${keyframes.min_interval.toFixed(3)}–${keyframes.max_interval.toFixed(3)} s`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t('trim.frameRate')}</dt>
+                  <dd>
+                    {t('trim.fpsValue', {
+                      average: keyframes.average_fps?.toFixed(3) ?? t('trim.unknown'),
+                      nominal: keyframes.nominal_fps?.toFixed(3) ?? t('trim.unknown'),
+                    })}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p>{analyzing ? t('trim.analyzingKeyframes') : analysisError}</p>
+            )}
+            <p>{t('trim.keyframeHelp')}</p>
+          </details>
         </div>
 
         <div className="modal-foot trim-foot">

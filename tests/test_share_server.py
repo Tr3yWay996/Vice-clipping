@@ -187,10 +187,9 @@ class ShareServerSecurityTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.get(f"{local_base}/api/clips") as resp:
             payload = await resp.json()
 
-        st = self.clip_path.stat()
         self.assertEqual(
             payload["clips"][0]["video_url"],
-            f"/v/test_clip?v={st.st_size}-{st.st_mtime_ns}",
+            f"/v/test_clip?v={_share.media_revision(self.clip_path)}",
         )
 
         public_base = f"http://127.0.0.1:{self.public_port}"
@@ -1404,6 +1403,9 @@ class AutoPlaylistToggleTests(unittest.IsolatedAsyncioTestCase):
     def _server(self, tmp: str, enabled: bool) -> "ShareServer":
         cfg = Config(output=OutputConfig(directory=tmp, auto_playlist_by_game=enabled))
         server = ShareServer(cfg)
+        # These tests exercise playlist membership with a one-byte fake clip.
+        # Do not launch an unrelated FFprobe task during event-loop teardown.
+        server._broadcast_clip = mock.AsyncMock()
         # PlaylistStore loads in its constructor, so repointing the path is not
         # enough on its own: the developer's real playlists are already in
         # memory and leak into the assertions.
@@ -1447,7 +1449,10 @@ class ShareServerViewPersistenceTests(unittest.IsolatedAsyncioTestCase):
             sharing=SharingConfig(port=_free_port(), public_port=_free_port(),
                                   cloudflare_tunnel=False),
         )
-        return ShareServer(cfg)
+        server = ShareServer(cfg)
+        # View persistence uses dummy files and does not exercise media probes.
+        server._broadcast_clip = mock.AsyncMock()
+        return server
 
     async def test_counts_survive_a_restart_with_an_empty_scan(self) -> None:
         import vice.share as share_mod

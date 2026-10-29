@@ -98,6 +98,8 @@ _RECORDER = textwrap.dedent('''\
 ''')
 
 
+@unittest.skipUnless(Path(f"/proc/self/task/{os.getpid()}/children").exists(),
+                     "kernel does not expose /proc task children")
 class SandboxedRecorderTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         tmp = tempfile.TemporaryDirectory()

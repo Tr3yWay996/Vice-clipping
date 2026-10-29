@@ -2591,7 +2591,10 @@ class SessionEnvironmentTests(unittest.TestCase):
 
 class RecorderWatchdogTests(unittest.IsolatedAsyncioTestCase):
     def _daemon(self, recorder: _FakeRecorder) -> main_mod.ViceDaemon:
-        with mock.patch("vice.main.load_config", return_value=Config()):
+        output = tempfile.TemporaryDirectory()
+        self.addCleanup(output.cleanup)
+        cfg = Config(output=OutputConfig(directory=output.name))
+        with mock.patch("vice.main.load_config", return_value=cfg):
             with mock.patch("vice.main.create_recorder", return_value=recorder):
                 with mock.patch("vice.main.HotkeyListener", return_value=_FakeHotkeys()):
                     with mock.patch("vice.main.can_access_hotkeys", return_value=True):

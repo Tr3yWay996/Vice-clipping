@@ -49,7 +49,8 @@ from .editor import (DISCORD_MAX_BYTES, DiscordTooLarge, EditorProjectStore,
                      default_export_name, discord_bitrates, project_extent,
                      sanitize_export_name, text_file_contents,
                      validate_project)
-from .media import communicate_with_timeout, probe_media, probe_media_detailed
+from .media import communicate_with_timeout, media_revision, probe_media, probe_media_detailed
+from .keyframes import KeyframeCache
 from .playlists import (IMAGE_PREFIX, PlaylistStore, build_tag_index,
                         image_slug)
 from .recorder import (IMAGE_EXTS, KEEP_ALL_STREAMS, _available_encoders,
@@ -276,8 +277,7 @@ def _save_app_state(state: dict) -> None:
 def _thumb_path(path: Path) -> Path:
     """Return cache path unique to this clip file content/version."""
     try:
-        st = path.stat()
-        key = f"{path.stem}_{st.st_size}_{st.st_mtime_ns}"
+        key = f"{path.stem}_{media_revision(path)}"
     except OSError:
         key = path.stem
     return THUMB_DIR / f"{key}.jpg"
@@ -295,8 +295,7 @@ def _proxy_path(path: Path) -> Path:
     """Cache path for a clip's H.264 preview, keyed by file identity so a trim
     or a reused clip number naturally invalidates it (same idea as _thumb_path)."""
     try:
-        st = path.stat()
-        key = f"{path.stem}_{st.st_size}_{st.st_mtime_ns}"
+        key = f"{path.stem}_{media_revision(path)}"
     except OSError:
         key = path.stem
     # Invalidate previews made before the eight-bit playback fix (#172).
@@ -372,8 +371,7 @@ def _discord_path(path: Path) -> Path:
     """Where a clip's Discord-sized copy goes, keyed by file identity for the
     same reason as _proxy_path."""
     try:
-        st = path.stat()
-        key = f"{path.stem}_{st.st_size}_{st.st_mtime_ns}"
+        key = f"{path.stem}_{media_revision(path)}"
     except OSError:
         key = path.stem
     return path.parent / DISCORD_SUBDIR / f"{key}.mp4"
@@ -1056,6 +1054,8 @@ class ShareServer:
         self._clips: dict[str, Path] = {}
         # slug → {width, height, duration}
         self._meta:  dict[str, dict] = {}
+        self._meta_revisions: dict[str, str] = {}
+        self._keyframes = KeyframeCache()
         # Screenshots, kept in their own index. Slugs are filename stems like a
         # clip's, and they can collide with one, so nothing may look an image
         # up in _clips or the other way round.
@@ -1125,6 +1125,7 @@ class ShareServer:
         # REST
         r.add_get("/api/clips",              self._api_clips)
         r.add_get("/api/clips/{slug}",       self._api_clip_info)
+        r.add_get("/api/clips/{slug}/keyframes", self._api_keyframes)
         r.add_delete("/api/clips/{slug}",    self._api_delete)
         r.add_post("/api/clips/{slug}/trim",              self._api_trim)
         r.add_post("/api/clips/{slug}/rename",            self._api_rename)
@@ -1249,6 +1250,8 @@ class ShareServer:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        if hasattr(self, "_keyframes"):
+            await self._keyframes.close()
         await self._exports.stop()
         for ws in list(self._ws_clients):
             try:
@@ -1438,8 +1441,15 @@ class ShareServer:
         await self.broadcast({"type": "clip_saved", "clip": self._clip_json(slug, path, meta)})
 
     async def _get_meta(self, slug: str, path: Path) -> dict:
-        if slug not in self._meta:
-            self._meta[slug] = await _ffprobe(path)
+        revision = media_revision(path)
+        if slug not in self._meta or self._meta_revisions.get(slug, revision) != revision:
+            meta = await _ffprobe(path)
+            # A probe of the previous inode must not repopulate a cache which
+            # a trim just invalidated while FFprobe was running.
+            if not path.exists() or media_revision(path) != revision:
+                return await self._get_meta(slug, path) if path.exists() else meta
+            self._meta[slug] = meta
+            self._meta_revisions[slug] = revision
         return self._meta[slug]
 
     def _clip_json(self, slug: str, path: Path, meta: dict) -> dict:
@@ -1454,7 +1464,7 @@ class ShareServer:
         # The slug is a filename, so it can hold spaces and punctuation that
         # would truncate or corrupt a URL (#138). Encode it in every link.
         enc = quote(slug, safe="")
-        thumb_rev = f"{size}-{mtime_ns}"
+        thumb_rev = media_revision(path) if path.exists() else f"{size}-{mtime_ns}"
         thumb_url = f"/t/{enc}?v={thumb_rev}" if _thumb_path(path).exists() else None
         return {
             "slug":       slug,
@@ -1838,9 +1848,20 @@ class ShareServer:
         meta = await self._get_meta(slug, path)
         return web.json_response(self._clip_json(slug, path, meta))
 
+    async def _api_keyframes(self, req: web.Request) -> web.Response:
+        path = self._clips.get(req.match_info["slug"])
+        if not path or not path.exists():
+            raise web.HTTPNotFound()
+        try:
+            return web.json_response(await self._keyframes.get(path), headers={"Cache-Control": "no-store"})
+        except (OSError, ValueError, TypeError, asyncio.TimeoutError):
+            return web.json_response({"error": "Keyframe analysis is unavailable. Free trimming still works."}, status=503)
+
     async def _api_delete(self, req: web.Request) -> web.Response:
         slug = req.match_info["slug"]
         path = self._clips.pop(slug, None)
+        if path:
+            self._keyframes.invalidate(path)
         _purge_clip_discord(path)
         if path and path.exists():
             path.unlink()
@@ -1849,6 +1870,7 @@ class ShareServer:
         (HIGHLIGHTS_DIR / f"{slug}.json").unlink(missing_ok=True)
         keystore.delete_sidecar(slug)
         self._meta.pop(slug, None)
+        self._meta_revisions.pop(slug, None)
         if self._views.pop(slug, None) is not None:
             _save_views(self._views)
         self._forget_share_token(slug)
@@ -1865,6 +1887,7 @@ class ShareServer:
         if not path or not path.exists():
             raise web.HTTPNotFound()
 
+        source_stat = path.stat()
         body  = await req.json()
         start = float(body.get("start", 0))
         end   = float(body.get("end",   0))
@@ -1919,65 +1942,78 @@ class ShareServer:
             except asyncio.TimeoutError:
                 return False, "ffmpeg timed out"
 
-        # Copy first: it is instant and lossless, and a cut that lands on a
-        # keyframe needs nothing else. When the copy would not play, re-encode
-        # into the clip's own codec, which is the only way to give the exact
-        # frame the user asked for. Seeking to the previous keyframe instead
-        # would play, but it would silently hand back a clip that starts before
-        # the chosen in-point (#172).
-        ok, err = await _run(_trim_cmd(None), 120)
-        if ok:
-            problem = await _trim_result_problem(tmp)
-            if problem:
-                log.info("Copy trim of %s %s, re-encoding", path.name, problem)
-        else:
-            problem = "could not be stream copied"
-            log.warning("Copy trim of %s failed, re-encoding: %s", path.name, err)
-
-        if problem:
-            candidates = await asyncio.to_thread(_trim_encoder_candidates, source_codec)
-            bitrate = await _video_bitrate(path)
-            for encoder in candidates:
-                ok, err = await _run(_trim_cmd(encoder, bitrate), 900)
-                if not ok:
-                    log.info("Trim of %s with %s failed: %s", path.name, encoder, err)
-                    continue
+        try:
+            # Copy first: it is instant and lossless, and a cut that lands on a
+            # keyframe needs nothing else. When the copy would not play, re-encode
+            # into the clip's own codec, which is the only way to give the exact
+            # frame the user asked for. Seeking to the previous keyframe instead
+            # would play, but it would silently hand back a clip that starts before
+            # the chosen in-point (#172).
+            ok, err = await _run(_trim_cmd(None), 120)
+            if ok:
                 problem = await _trim_result_problem(tmp)
                 if problem:
-                    err = f"the trimmed clip {problem}"
-                    log.warning("Trim of %s with %s %s", path.name, encoder, problem)
-                    continue
-                _remember_trim_encoder(source_codec, encoder)
-                log.info("Trimmed %s with %s", path.name, encoder)
-                break
+                    log.info("Copy trim of %s %s, re-encoding", path.name, problem)
+            else:
+                problem = "could not be stream copied"
+                log.warning("Copy trim of %s failed, re-encoding: %s", path.name, err)
 
-        # Never replace the user's recording with a file Vice has not decoded.
-        # Failing here leaves the original on disk and says why, which beats
-        # handing back a clip that opens black and explains nothing (#172).
-        if problem or not ok or not tmp.exists():
-            tmp.unlink(missing_ok=True)
-            return web.json_response(
-                {"ok": False, "error": err or problem or "trim failed"})
+            if problem:
+                candidates = await asyncio.to_thread(_trim_encoder_candidates, source_codec)
+                bitrate = await _video_bitrate(path)
+                for encoder in candidates:
+                    ok, err = await _run(_trim_cmd(encoder, bitrate), 900)
+                    if not ok:
+                        log.info("Trim of %s with %s failed: %s", path.name, encoder, err)
+                        continue
+                    problem = await _trim_result_problem(tmp)
+                    if problem:
+                        err = f"the trimmed clip {problem}"
+                        log.warning("Trim of %s with %s %s", path.name, encoder, problem)
+                        continue
+                    _remember_trim_encoder(source_codec, encoder)
+                    log.info("Trimmed %s with %s", path.name, encoder)
+                    break
 
-        kept_keys = keystore.load_sidecar(slug)
-        if as_copy:
-            target = _trimmed_copy_path(path)
-            tmp.replace(target)
+            # Never replace the user's recording with a file Vice has not decoded.
+            # Failing here leaves the original on disk and says why, which beats
+            # handing back a clip that opens black and explains nothing (#172).
+            if problem or not ok or not tmp.exists():
+                tmp.unlink(missing_ok=True)
+                return web.json_response(
+                    {"ok": False, "error": err or problem or "trim failed"})
+
+            # Restore the historical date on the completed temporary file, before
+            # either atomic publication. Failure here must leave the source alone.
+            try:
+                os.utime(tmp, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
+            except OSError as exc:
+                tmp.unlink(missing_ok=True)
+                return web.json_response({"ok": False, "error": str(exc)})
+
+            kept_keys = keystore.load_sidecar(slug)
+            if as_copy:
+                target = _trimmed_copy_path(path)
+                tmp.replace(target)
+                if kept_keys is not None:
+                    keystore.save_sidecar(target.stem, keystore.cut_intervals(kept_keys, start, end))
+                self.add_clip(target, self.playlists.game_for(slug))
+                return web.json_response({"ok": True, "slug": target.stem, "copy": True})
+
+            tmp.replace(path)
             if kept_keys is not None:
-                keystore.save_sidecar(target.stem, keystore.cut_intervals(kept_keys, start, end))
-            self.add_clip(target, self.playlists.game_for(slug))
-            return web.json_response({"ok": True, "slug": target.stem, "copy": True})
-
-        tmp.replace(path)
-        if kept_keys is not None:
-            keystore.save_sidecar(slug, keystore.cut_intervals(kept_keys, start, end))
-        # Clear cached thumbnail and metadata so they regenerate on next access
-        _purge_slug_thumbs(slug)
-        _purge_slug_proxies(slug)
-        _purge_clip_discord(path)
-        self._meta.pop(slug, None)
-        asyncio.create_task(self._broadcast_clip(slug, path))
-        return web.json_response({"ok": True, "slug": slug})
+                keystore.save_sidecar(slug, keystore.cut_intervals(kept_keys, start, end))
+            # Clear cached thumbnail and metadata so they regenerate on next access
+            _purge_slug_thumbs(slug)
+            _purge_slug_proxies(slug)
+            _purge_clip_discord(path)
+            self._meta.pop(slug, None)
+            self._meta_revisions.pop(slug, None)
+            self._keyframes.invalidate(path)
+            asyncio.create_task(self._broadcast_clip(slug, path))
+            return web.json_response({"ok": True, "slug": slug})
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def _api_rename(self, req: web.Request) -> web.Response:
         slug = req.match_info["slug"]
@@ -2007,7 +2043,10 @@ class ShareServer:
         # clip transcode its preview again after every rename (#226).
         cached = frozenset(_current_cache_files(path))
         old_stem = path.stem
+        old_revision = media_revision(path)
         path.rename(new_path)
+        new_revision = media_revision(new_path)
+        self._keyframes.invalidate(path)
         new_slug = new_path.stem
 
         # Update internal state
@@ -2018,10 +2057,11 @@ class ShareServer:
         _purge_clip_discord(path)
         for old in cached:
             try:
-                old.replace(old.with_name(new_slug + old.name[len(old_stem):]))
+                old.replace(old.with_name(new_slug + old.name[len(old_stem):].replace(old_revision, new_revision)))
             except OSError as exc:
                 log.debug("Could not carry %s across the rename: %s", old.name, exc)
         self._meta.pop(slug, None)
+        self._meta_revisions.pop(slug, None)
 
         # Rename highlights file if it exists
         old_hl = HIGHLIGHTS_DIR / f"{slug}.json"

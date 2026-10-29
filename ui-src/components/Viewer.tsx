@@ -57,7 +57,7 @@ export interface ViewerProps {
 const VOLUME_KEY = 'vice-volume';
 const MUTED_KEY = 'vice-muted';
 
-function storedVolume(): number {
+export function storedVolume(): number {
   try {
     const raw = Number(localStorage.getItem(VOLUME_KEY));
     return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 1;
@@ -66,7 +66,7 @@ function storedVolume(): number {
   }
 }
 
-function storedMuted(): boolean {
+export function storedMuted(): boolean {
   try {
     return localStorage.getItem(MUTED_KEY) === '1';
   } catch {
@@ -1025,7 +1025,7 @@ function Scrubber({percent, onSeek}: {percent: number; onSeek: (ratio: number) =
  * not throw away the level the user chose. Storing zero is what made unmuting
  * after a restart jump back to full volume.
  */
-function VolumeControl({
+export function VolumeControl({
   volume,
   muted,
   onChange,
