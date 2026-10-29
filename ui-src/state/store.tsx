@@ -58,7 +58,8 @@ interface State {
   images: Image[];
   playlists: Playlist[];
   status: Status;
-  tunnelUrl: string | null;
+  statusSynced: boolean;
+  tunnelError: boolean;
   update: UpdateInfo | null;
   /** Slugs that arrived this session, for the "new" treatment in the grid. */
   recentNew: string[];
@@ -101,7 +102,8 @@ const initialState: State = {
   images: [],
   playlists: [],
   status: INITIAL_STATUS,
-  tunnelUrl: null,
+  statusSynced: false,
+  tunnelError: false,
   update: null,
   recentNew: [],
   view: 'home',
@@ -122,8 +124,9 @@ type Action =
       clips: Clip[];
       images: Image[];
       playlists: Playlist[];
-      status: Status;
     }
+  | {type: 'statusSnapshot'; status: Status}
+  | {type: 'statusStale'}
   | {type: 'loadFailed'; error: string}
   | {type: 'ws'; msg: WsMessage}
   | {type: 'setView'; view: ViewName; playlistId?: string | null}
@@ -152,15 +155,21 @@ function reduce(state: State, action: Action): State {
         ...state,
         ready: true,
         loadError: null,
-        config: action.config,
+        config: state.config ?? action.config,
         clips: action.clips,
         images: action.images,
         playlists: action.playlists,
-        status: action.status,
-        tunnelUrl: action.status.public_url ?? null,
-        update: action.status.update ?? null,
-        sessionStartedAt: action.status.session_active ? Date.now() : null,
       };
+
+    case 'statusSnapshot':
+      return {
+        ...reduceWs(state, {type: 'status', ...action.status}),
+        statusSynced: true,
+        tunnelError: action.status.public_is_tunnel ? false : state.tunnelError,
+      };
+
+    case 'statusStale':
+      return {...state, statusSynced: false};
 
     case 'loadFailed':
       // Still mark ready: a window stuck on the boot cover cannot tell anyone
@@ -197,7 +206,11 @@ function reduce(state: State, action: Action): State {
       for (const [section, values] of Object.entries(action.patch)) {
         config[section] = {...(config[section] ?? {}), ...values};
       }
-      return {...state, config: config as unknown as Config};
+      return {
+        ...state,
+        config: config as unknown as Config,
+        ...(action.patch.sharing !== undefined ? {statusSynced: false, tunnelError: false} : {}),
+      };
     }
 
     case 'setClips':
@@ -335,6 +348,10 @@ function reduceWs(state: State, msg: WsMessage): State {
       return {
         ...state,
         status: merged,
+        statusSynced:
+          partial.public_is_tunnel !== undefined && partial.public_url !== undefined
+            ? true : state.statusSynced,
+        tunnelError: partial.public_is_tunnel ? false : state.tunnelError,
         sessionStartedAt: merged.session_active ? state.sessionStartedAt ?? Date.now() : null,
         update: partial.update ?? state.update,
       };
@@ -347,13 +364,13 @@ function reduceWs(state: State, msg: WsMessage): State {
 
     case 'tunnel_url':
       return withEvent(
-        {...state, tunnelUrl: msg.url},
+        {...state, statusSynced: false, tunnelError: false},
         {kind: 'info', title: t('events.publicLinkReady'), detail: msg.url, tone: 'accent', holdMs: 6000},
       );
 
     case 'tunnel_error':
       return withEvent(
-        {...state, tunnelUrl: null},
+        {...state, statusSynced: false, tunnelError: true},
         {
           kind: 'error',
           title: t('events.noPublicLink'),
@@ -462,14 +479,13 @@ export function StoreProvider({children}: {children: ReactNode}) {
     let cancelled = false;
     void (async () => {
       try {
-        const [config, clips, images, playlists, status] = await Promise.all([
+        const [config, clips, images, playlists] = await Promise.all([
           api.getConfig(),
           api.clips(),
           api.images(),
           api.playlists(),
-          api.status(),
         ]);
-        if (!cancelled) dispatch({type: 'loaded', config, clips, images, playlists, status});
+        if (!cancelled) dispatch({type: 'loaded', config, clips, images, playlists});
       } catch (err) {
         if (!cancelled) dispatch({type: 'loadFailed', error: (err as Error).message});
       }
@@ -503,18 +519,77 @@ export function StoreProvider({children}: {children: ReactNode}) {
   // out of date. Listing probes every file and takes about a second on a real
   // library, long enough to delete a picture while a stale copy is in flight.
   const imageEvents = useRef(0);
-  useEffect(() => connectWs(msg => {
-    if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
-    // The daemon changed the config itself (the overlay was dragged, or its
-    // key toggled it), so the copy here is stale.
-    if (msg.type === 'config_changed') {
-      void api
-        .getConfig()
-        .then(config => dispatch({type: 'setConfig', config}))
-        .catch(err => console.debug('Reloading the config failed', err));
-    }
-    dispatch({type: 'ws', msg});
-  }), []);
+  const refreshStatus = useRef<() => Promise<void>>(async () => {});
+  useEffect(() => {
+    let cancelled = false;
+    let request = 0;
+    let statusEvents = 0;
+    const syncStatus = async () => {
+      const current = ++request;
+      const seen = statusEvents;
+      try {
+        const status = await api.status();
+        if (cancelled || current !== request) return;
+        // A newer event may describe a change after the server took this
+        // snapshot. Reconcile once more rather than overwriting that event.
+        if (seen !== statusEvents) {
+          void syncStatus();
+          return;
+        }
+        dispatch({type: 'statusSnapshot', status});
+      } catch (err) {
+        if (!cancelled && current === request) {
+          dispatch({type: 'statusStale'});
+          console.debug('Refreshing backend status failed', err);
+        }
+      }
+    };
+    refreshStatus.current = syncStatus;
+    const disconnect = connectWs(msg => {
+      if (cancelled) return;
+      if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
+      if (['status', 'tunnel_url', 'tunnel_error', 'session_start', 'session_stop'].includes(msg.type)) {
+        statusEvents += 1;
+      }
+      if (msg.type === 'config_changed') {
+        void api.getConfig().then(config => {
+          if (!cancelled) {
+            dispatch({type: 'setConfig', config});
+            void syncStatus();
+          }
+        }).catch(err => console.debug('Reloading the config failed', err));
+      }
+      dispatch({type: 'ws', msg});
+      if (msg.type === 'tunnel_url' || msg.type === 'tunnel_error' || msg.type === 'share_links_changed') {
+        void syncStatus();
+      }
+    }, {
+      // The socket is subscribed before this snapshot, closing the gap where
+      // a tunnel event could have been missed between HTTP load and WS open.
+      onOpen: () => {void syncStatus();},
+      onClose: () => {
+        request += 1;
+        dispatch({type: 'statusStale'});
+      },
+    });
+    // Also load when the WebSocket cannot connect. Slow clip enumeration must
+    // never hold this snapshot, or overwrite subsequent live status updates.
+    void syncStatus();
+    const resume = () => {void syncStatus();};
+    const visible = () => {if (document.visibilityState === 'visible') resume();};
+    window.addEventListener('focus', resume);
+    window.addEventListener('online', resume);
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      cancelled = true;
+      request += 1;
+      refreshStatus.current = async () => {};
+      disconnect();
+      window.removeEventListener('focus', resume);
+      window.removeEventListener('online', resume);
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, []);
 
   // Transient island events expire on their own.
   useEffect(() => {
@@ -571,6 +646,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
       const result = await api.saveConfig(patch);
       if (result.ok === false) throw new Error(result.error || t('events.notSaved'));
       dispatch({type: 'mergeConfig', patch});
+      if (patch.sharing) await refreshStatus.current();
       return result;
     },
     [],

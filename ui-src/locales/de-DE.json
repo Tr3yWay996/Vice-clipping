@@ -118,7 +118,8 @@
     "copyLinkBody": "Die Zwischenablage war nicht verfügbar, hier ist der Link zum Kopieren von Hand.",
     "restartTitle": "Vice neu starten, um abzuschließen",
     "restartBody": "Die Einstellung ist gespeichert, wirkt aber erst nach einem Neustart des Daemons.",
-    "gotIt": "Verstanden"
+    "gotIt": "Verstanden",
+    "publicLinkActive": "Öffentlicher Link aktiv"
   },
   "card": {
     "unreadable": "Nicht lesbar",
