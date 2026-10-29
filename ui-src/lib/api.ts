@@ -1,4 +1,5 @@
 import type {Clip, Config, Highlight, Image, Playlist, Status} from './types';
+import type {KeyframeInfo} from './trimming';
 
 /**
  * The daemon's local HTTP API. Every call is same-origin: the public server
@@ -91,8 +92,13 @@ export const api = {
       `/api/clips/${enc(slug)}/discord`,
     ),
   /** With `copy` the selection becomes a new clip and the original is kept. */
-  trimClip: (slug: string, start: number, end: number, copy = false) =>
-    post<{slug: string; copy?: boolean}>(`/api/clips/${enc(slug)}/trim`, {start, end, copy}),
+  trimClip: async (slug: string, start: number, end: number, copy = false) => {
+    const result = await post<{ok?: boolean; error?: string; slug: string; copy?: boolean}>(`/api/clips/${enc(slug)}/trim`, {start, end, copy});
+    if (result.ok === false) throw new Error(result.error || 'Trim failed');
+    return result;
+  },
+  keyframes: (slug: string, signal?: AbortSignal) =>
+    request<KeyframeInfo>(`/api/clips/${enc(slug)}/keyframes`, {signal}),
   markViewed: (slug: string) => post<{ok?: boolean; views: number}>(`/api/clips/${enc(slug)}/view`),
   /** Save the frame at `time` as a screenshot. Also puts it on the clipboard. */
   saveFrame: (slug: string, time: number) =>

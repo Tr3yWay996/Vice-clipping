@@ -17,6 +17,12 @@ from typing import Optional
 
 log = logging.getLogger("vice.media")
 
+
+def media_revision(path: Path) -> str:
+    """Content identity independent of the recording date retained by edits."""
+    st = path.stat()
+    return f"{st.st_size}-{st.st_mtime_ns}-{st.st_ctime_ns}-{st.st_dev}-{st.st_ino}"
+
 # Suffix patterns for temp files written during in-place edits
 # (trim / watermark / remux). Leftovers mean a previous run was
 # interrupted mid-edit; they are safe to delete at daemon startup.

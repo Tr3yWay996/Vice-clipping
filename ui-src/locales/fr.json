@@ -332,7 +332,7 @@
     "errTrim": "Impossible de découper le clip",
     "preview": "Aperçu",
     "stop": "Arrêter",
-    "loopHelp": "Lit la sélection en boucle. Les bornes de coupe sont sans perte.",
+    "loopHelp": "Lit la sélection en boucle. Vice valide la coupe avant de sauvegarder.",
     "saving": "Enregistrement",
     "preparingPreview": "Préparation de l'aperçu H.265",
     "openInPlayer": "Ouvrir dans le lecteur système",

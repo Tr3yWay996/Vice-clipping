@@ -332,7 +332,7 @@
     "errTrim": "Clip konnte nicht gekürzt werden",
     "preview": "Vorschau",
     "stop": "Stopp",
-    "loopHelp": "Spielt die Auswahl in Schleife. Die Schnittgrenzen sind verlustfrei.",
+    "loopHelp": "Spielt die Auswahl in Schleife. Vice prüft den Schnitt vor dem Speichern.",
     "saving": "Speichert",
     "preparingPreview": "H.265-Vorschau wird vorbereitet",
     "openInPlayer": "Im System-Player öffnen",

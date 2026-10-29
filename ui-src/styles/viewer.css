@@ -1122,3 +1122,48 @@ kbd {
   border-radius: 7px;
   transform: scale(0.94);
 }
+
+/* The trim timeline owns both playback and selection. Layers keep endpoints
+   and the playhead legible above dense keyframe distributions. */
+.trim-timeline {
+  touch-action: none;
+  cursor: crosshair;
+  isolation: isolate;
+}
+.trim-track, .trim-selection, .trim-progress, .trim-keyframe { pointer-events: none; }
+.trim-selection { z-index: 1; }
+.trim-progress {
+  position: absolute;
+  height: 3px;
+  bottom: 6px;
+  background: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+}
+.trim-keyframe {
+  position: absolute;
+  width: 1px;
+  height: 14px;
+  top: 12px;
+  background: var(--color-text-secondary);
+  opacity: 0.65;
+  z-index: 2;
+}
+.trim-hl { z-index: 3; }
+.trim-playhead { z-index: 4; height: 28px; top: 2px; }
+.trim-handle { z-index: 5; touch-action: none; }
+.trim-timeline:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: var(--radius-element); }
+.trim-playback, .trim-keyframe-actions { display: flex; align-items: center; gap: var(--spacing-3); flex-wrap: wrap; }
+.trim-playback .player-volume { margin-left: auto; }
+.trim-keyframe-toggle { display: flex; align-items: center; gap: var(--spacing-2); cursor: pointer; font-size: 12px; }
+.trim-keyframe-toggle input { accent-color: var(--color-accent); }
+.trim-alignment, .trim-keyframe-message { color: var(--color-text-secondary); font-size: 11px; }
+.trim-keyframe-message:empty { display: none; }
+.trim-keyframe-info { font-size: 12px; color: var(--color-text-secondary); }
+.trim-keyframe-info summary { cursor: pointer; color: var(--color-text-primary); padding-block: var(--spacing-2); }
+.trim-keyframe-info dl { margin-block: var(--spacing-2); }
+.trim-keyframe-info dl > div { display: flex; justify-content: space-between; gap: var(--spacing-3); padding-block: 3px; }
+.trim-keyframe-info dd { margin: 0; text-align: right; color: var(--color-text-primary); }
+.trim-keyframe-info p { margin-block: var(--spacing-2); font-size: 11px; line-height: 1.5; }
+.trim-foot { flex-wrap: wrap; }
+.trim-seek { position: absolute; inset: 0; }
+.trim-seek:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: var(--radius-element); }
