@@ -3,8 +3,10 @@
 The viewer and trim modal share playback controls, audio preferences, loading and
 failure handling, exact seeking and animation-frame-coalesced scrubbing. A normal
 click on the trim timeline seeks. Shift + click changes the nearest boundary;
-handles still drag without Shift. Showing keyframes enables boundary snapping.
-Playback seeking remains free in either mode.
+handles still drag without Shift. Boundary edits and snapping leave playback
+position and state unchanged. Showing keyframes enables boundary snapping.
+Playback seeking remains free in either mode. See [the keyboard guide](KEYBOARD.md)
+for shared shortcuts, viewer preferences and full editor I/O semantics.
 
 ## Daemon-owned jobs
 
