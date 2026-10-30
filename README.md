@@ -160,6 +160,10 @@ OBS has a replay buffer. So why use Vice?
 
 Game detection (filename tagging and Discord presence) works on X11, Hyprland, sway and Niri. Works on KDE Plasma Wayland when `kdotool` is available. On other compositors clips simply save untagged.
 
+Use **Settings → Detected Games** to confirm unknown games and permanently edit names,
+artwork and matching rules. Recognition works offline; online artwork lookup is optional.
+See the [game library guide](docs/GAMES.md) for decisions, migration and privacy details.
+
 ## CLI
 
 ```
