@@ -352,7 +352,7 @@ function PlaylistRow({
         }}
         {...drop.props}>
         <span className="playlist-mark" aria-hidden="true">
-          {playlist.emoji || <IconPlaylist size={14} />}
+          {playlist.artwork_url ? <img src={playlist.artwork_url} alt=""/> : playlist.emoji || <IconPlaylist size={14} />}
         </span>
         <span className="nav-label">{playlist.name}</span>
         <span className="nav-count">{playlist.clip_slugs?.length ?? 0}</span>

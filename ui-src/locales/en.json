@@ -1068,5 +1068,107 @@
   "playback": {
     "shortcuts": "Keyboard shortcuts",
     "shortcutHelp": "Space: play/pause · ←/→: seek 1 s · Shift + ←/→: seek 0.1 s · ↑/↓: volume ±5% · M: mute · Home/End: beginning/end. Text fields and native controls keep their own keys."
+  },
+  "games": {
+    "title": "Detected Games",
+    "suggestions": "Game recognition suggestions",
+    "suggestionsHelp": "Keep unknown game candidates for review here. Vice never opens a prompt over gameplay.",
+    "online": "Online artwork lookups",
+    "onlineHelp": "Optional. Downloads the public Discord game catalog and selected artwork. Window titles and executable paths stay on this device. Cached images work offline.",
+    "search": "Search games or identifiers",
+    "filterLabel": "Show",
+    "filter": {
+      "all": "All games",
+      "recognized": "Recognized",
+      "manual": "Configured by you",
+      "pending": "Pending or later",
+      "rejected": "Not games"
+    },
+    "add": "Add game",
+    "loading": "Loading the game library…",
+    "empty": "No matching games. Play a game or add its identifiers here.",
+    "clipCount": {
+      "one": "{formatted} clip",
+      "other": "{formatted} clips"
+    },
+    "steamId": "Steam App ID: {id}",
+    "lastDetected": "Last detected: {date}",
+    "never": "Not yet",
+    "confirmGame": "Confirm game",
+    "correct": "Correct name or choose another game",
+    "notGame": "Not a game",
+    "later": "Ask later",
+    "more": {
+      "one": "Show {formatted} more game",
+      "other": "Show {formatted} more games"
+    },
+    "edit": "Edit {name}",
+    "save": "Save game",
+    "name": "Display name",
+    "resetName": "Restore automatic name",
+    "artPreview": "Selected artwork preview",
+    "importArtwork": "Import local artwork",
+    "artHelp": "PNG, JPEG or WebP, up to 5 MB and 4096 × 4096 pixels. Preview changes before saving. Custom artwork stays local; Discord uses public artwork only where supported.",
+    "resetArtwork": "Restore automatic artwork",
+    "searchArtwork": "Find alternative artwork",
+    "artSearchHelp": "Enable online lookups to search the public catalog. The words entered here are matched locally; Vice does not send process paths or private window titles.",
+    "artQuery": "Game title to search",
+    "preview": "Preview",
+    "rulesTitle": "Recognition rules",
+    "rulesHelp": "One identifier per line. Executables and classes match exactly, ignoring case. Paths are exact. Title patterns use at most two * wildcards and must be specific. Resolve a conflict by editing identifiers or merging entries.",
+    "rules": {
+      "executables": "Executable aliases",
+      "paths": "Executable paths",
+      "classes": "Window classes / app identifiers",
+      "steam_ids": "Steam App IDs",
+      "titles": "Window title patterns"
+    },
+    "currentStatus": "Recognition status: {status}",
+    "enable": "Recognize this as a game",
+    "reclassify": "Update associated clips",
+    "remove": "Remove learned game",
+    "otherGame": "Different game / merge target",
+    "chooseGame": "Choose a game",
+    "merge": "Use selected game / merge duplicates",
+    "confirmAction": "Confirm library change",
+    "continue": "Continue",
+    "confirm": {
+      "remove": "Remove this learned identity from the active library? Its identifiers will no longer produce suggestions.",
+      "merge": "Combine this identity and its matching identifiers with the selected game? Related automatic playlists will be combined.",
+      "reclassify": "Save this game identity on clips already associated with its automatic playlist? Custom playlists remain unchanged."
+    },
+    "filesUntouched": "Video files, filenames, timestamps, sharing links and editing sidecars will stay unchanged.",
+    "reviewPending": {
+      "one": "Review {count} game suggestion",
+      "other": "Review {count} game suggestions"
+    },
+    "source": {
+      "steam": "Steam manifest",
+      "builtin": "Built-in database",
+      "custom": "Existing custom rules",
+      "manual": "Manually added",
+      "process": "Application candidate",
+      "legacy": "Existing clip library"
+    },
+    "status": {
+      "recognized": "Recognized",
+      "confirmed": "User-confirmed",
+      "pending": "Needs confirmation",
+      "deferred": "Review later",
+      "rejected": "Not a game"
+    },
+    "errors": {
+      "name": "Enter a valid game name (up to 120 characters).",
+      "rules": "Add at least one valid recognition identifier.",
+      "generic": "Use a specific game identifier, not a shared launcher or system application.",
+      "steam": "Steam App IDs must be positive numbers.",
+      "title": "Use a specific title pattern with at least five letters or digits and at most two * wildcards.",
+      "conflict": "An identifier already belongs to another game. Edit the rules or merge the entries.",
+      "artwork": "Artwork could not be used. Choose a valid PNG, JPEG or WebP within the size limits.",
+      "online": "Enable online artwork lookups first.",
+      "offline": "Online artwork is unavailable. Cached and local images still work.",
+      "target": "Choose another recognized game.",
+      "action": "This action is unavailable."
+    }
   }
 }

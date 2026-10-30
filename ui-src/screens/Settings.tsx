@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
+import {DetectedGamesSettings} from '../components/settings/DetectedGames';
 import type {KeyOverlayState} from '../lib/types';
 import {formatLengthLong} from '../lib/format';
 import {availableLocales, currentLocale, setLocale, t, tNode} from '../lib/i18n';
@@ -53,6 +54,7 @@ const SECTIONS = [
   ['storage', 'settings.secStorage'],
   ['sharing', 'settings.secSharing'],
   ['discord', 'settings.secDiscord'],
+  ['detected-games', 'games.title'],
   ['overlay', 'settings.secOverlay'],
   ['appearance', 'settings.secAppearance'],
   ['advanced', 'settings.secAdvanced'],
@@ -67,7 +69,7 @@ interface DisplayInfo {
 }
 
 export function Settings() {
-  const {state, saveConfig, notify} = useStore();
+  const {state, saveConfig, notify, dispatch} = useStore();
   const {choose, chooseCustom, seed} = useAccentChoice();
   const [picking, setPicking] = useState(false);
   const customBase = seed ? deriveCustom(seed).ramp.base : null;
@@ -183,6 +185,13 @@ export function Settings() {
       scrollingTo.current = null;
     }, 600);
   };
+
+  useEffect(() => {
+    if (draft && state.settingsSection === 'detected-games') {
+      goTo('detected-games');
+      dispatch({type:'settingsSectionOpened'});
+    }
+  }, [draft, state.settingsSection, dispatch]);
 
   const dirty = useMemo(
     () => (draft ? JSON.stringify(patchFromDraft(draft)) !== baseline : false),
@@ -977,22 +986,10 @@ export function Settings() {
           </Row>
 
           <Row
-            label={t('settings.discordCustomGames')}
-            stack
-            help={
-              <>
-                {tNode('settings.discordCustomGamesHelp', {
-                  format: <code>Display Name | match1, match2</code>,
-                })}
-              </>
-            }>
-            <TextArea
-              label={t('settings.discordCustomGames')}
-              rows={4}
-              value={draft.discordCustomGames}
-              placeholder={t('settings.discordCustomGamesPlaceholder')}
-              onChange={discordCustomGames => update({discordCustomGames})}
-            />
+            label={t('games.title')}>
+            <button type="button" className="btn btn-quiet btn-sm" onClick={() => goTo('detected-games')}>
+              {t('games.title')}
+            </button>
           </Row>
 
           <Row
@@ -1010,6 +1007,10 @@ export function Settings() {
         </Card>
 
         {/* ── Overlay ───────────────────────────────────────────── */}
+        <Card id="detected-games" title={t('games.title')} register={register('detected-games')}>
+          <DetectedGamesSettings/>
+        </Card>
+
         <Card id="overlay" title={t('settings.secOverlay')} register={register('overlay')}>
           <Row
             label={t('settings.keyOverlay')}

@@ -300,6 +300,11 @@ export function Home() {
         </p>
       </header>
 
+      {state.config?.ui?.game_suggestions !== false && state.games.some(game=>game.status==='pending') ?
+        <button type="button" className="btn btn-quiet btn-sm" onClick={()=>dispatch({type:'showGames'})}>
+          {t('games.reviewPending',{count:state.games.filter(game=>game.status==='pending').length})}
+        </button> : null}
+
       {layout === 'rail' ? null : (
         <section className="tiles" aria-label={t('home.quickSettings')}>
           <div className="tile-row tile-row-2">
@@ -518,7 +523,7 @@ function PlaylistChip({
       onClick={onOpen}
       {...drop.props}>
       <span className="playlist-chip-mark" aria-hidden="true">
-        {playlist.emoji || <IconPlaylist size={15} />}
+        {playlist.artwork_url ? <img src={playlist.artwork_url} alt=""/> : playlist.emoji || <IconPlaylist size={15} />}
       </span>
       <span className="playlist-chip-text">
         <b>{playlist.name}</b>

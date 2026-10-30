@@ -919,3 +919,23 @@ select option {
   line-height: 1.55;
   color: var(--color-error);
 }
+
+/* The game registry uses the existing Settings cards and modal fields. */
+.game-library-tools, .game-row-actions { display: flex; flex-wrap: wrap; gap: var(--spacing-2); align-items: center; }
+.game-library-tools { margin: var(--spacing-4) 0; }
+.game-library-list { display: grid; gap: var(--spacing-2); max-height: 65vh; overflow: auto; }
+.game-library-row { padding: var(--spacing-3); border-radius: var(--radius-element); background: var(--raised); }
+.game-library-open { display: flex; align-items: center; text-align: left; gap: var(--spacing-3); width: 100%; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.game-library-open > span:last-child { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.game-library-open small { color: var(--color-text-secondary); font-size: 11px; }
+.game-library-open img, .game-art-placeholder { width: 48px; height: 48px; flex: 0 0 48px; object-fit: contain; border-radius: var(--radius-element); }
+.game-art-placeholder { display: grid; place-items: center; background: var(--control); }
+.game-row-actions { margin-top: var(--spacing-2); }
+.game-editor fieldset { border: 0; padding: 0; min-width: 0; display: grid; gap: var(--spacing-3); }
+.game-art-preview { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-3); }
+.game-art-preview img { width: 96px; height: 96px; object-fit: contain; border-radius: var(--radius-element); }
+.game-art-preview input { display: block; max-width: 100%; margin-top: var(--spacing-2); }
+.game-error { color: var(--color-error); overflow-wrap: anywhere; }
+.playlist-mark img, .playlist-chip-mark img { width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+.game-field { display: grid; gap: var(--spacing-2); font-size: 12px; }
+.game-field .text-input, .game-field .text-area { width: 100%; min-width: 0; }
