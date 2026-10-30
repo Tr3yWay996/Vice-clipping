@@ -96,3 +96,21 @@ follow-up pull request with just those strings is welcome and takes a minute.
 **Long words.** German and Polish run about 30% longer than English. If a label
 overflows a row, say so in the pull request rather than shortening the
 translation into something wrong: the layout is the thing to fix.
+
+## Required for every contributor
+
+Every future feature or modification that introduces user-visible text must
+integrate with the existing localization system and update the relevant
+translations. This applies to controls, hints, errors, empty states, queue
+statuses, accessibility labels and interpolated statistics. Use `t` / `tNode`,
+keep placeholder names consistent, and provide natural translations in English,
+French, German and Brazilian Portuguese for added or changed copy. Use the
+selected app locale for number, percentage, duration and count formatting.
+
+`npm run i18n:check` is required in CI. It rejects unknown localization keys,
+new missing translations, mismatched placeholders, missing plural fallbacks and
+hard-coded user-facing prose. Test fixtures and developer diagnostics are not
+user interface copy. `tools/i18n-legacy-missing.json` records only the pre-existing
+upstream translation backlog; do not expand it to bypass a check. Existing gaps
+may still fall back to English while they are translated, but new features may
+not create additional gaps.

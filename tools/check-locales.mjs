@@ -10,10 +10,19 @@
 // only and nobody noticed.
 
 import {readFileSync, readdirSync} from 'node:fs';
-import {join} from 'node:path';
+import {join, resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 
-const LOCALES_DIR = new URL('../ui-src/locales/', import.meta.url);
-const UI_SRC = new URL('../ui-src/', import.meta.url);
+const argument = name => {
+  const at = process.argv.indexOf(name);
+  return at >= 0 ? pathToFileURL(resolve(process.argv[at + 1]) + '/') : null;
+};
+const LOCALES_DIR = argument('--locales-dir') ?? new URL('../ui-src/locales/', import.meta.url);
+const UI_SRC = argument('--ui-dir') ?? new URL('../ui-src/', import.meta.url);
+// Existing translation gaps are a frozen backlog, not permission to add new
+// untranslated features. Never expand this file to accommodate a new feature.
+const legacyMissing = JSON.parse(readFileSync(new URL('./i18n-legacy-missing.json', import.meta.url), 'utf8'));
+
 
 const read = url => JSON.parse(readFileSync(url, 'utf8'));
 
@@ -58,6 +67,24 @@ for (const file of localeFiles) {
     return mine !== undefined && JSON.stringify(mine) === JSON.stringify(valueAt(en, k));
   });
   const missing = enKeys.filter(k => valueAt(locale, k) === undefined);
+  const addedMissing = missing.filter(key => !(legacyMissing[name] ?? []).includes(key));
+  if (addedMissing.length) {
+    problems += addedMissing.length;
+    console.log(`  Missing required translations: ${addedMissing.join(', ')}`);
+  }
+  const placeholders = value => [...new Set(JSON.stringify(value).match(/\{\w+\}/g) ?? [])].sort().join(',');
+  for (const key of keys) {
+    if (!enKeys.includes(key)) continue;
+    if (placeholders(valueAt(locale, key)) !== placeholders(valueAt(en, key))) {
+      problems += 1;
+      console.log(`  Placeholder mismatch: ${key}`);
+    }
+    const value = valueAt(locale, key);
+    if (typeof value === 'object' && (typeof value.other !== 'string')) {
+      problems += 1;
+      console.log(`  Missing plural fallback: ${key}`);
+    }
+  }
   const done = enKeys.length - missing.length - untouched.length;
   const pct = Math.round((done / enKeys.length) * 100);
 
@@ -96,7 +123,7 @@ function walk(dir) {
     if (entry.isDirectory()) out.push(...walk(path));
     // .ts as well as .tsx: the editor engine builds its timeline with template
     // strings rather than JSX, and that is where its copy lives.
-    else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) out.push(path);
+    else if (!/\.(test|spec)\.[tj]sx?$/.test(entry.name) && (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts'))) out.push(path);
   }
   return out;
 }
@@ -104,6 +131,12 @@ function walk(dir) {
 const suspects = [];
 for (const file of walk(new URL('.', UI_SRC).pathname)) {
   const src = readFileSync(file, 'utf8');
+  for (const [, key] of src.matchAll(/\bt(?:Node)?\(\s*['"]([\w.-]+)['"]/g)) {
+    if (!enKeys.includes(key)) {
+      problems += 1;
+      console.log(`Unknown localization key in ${file.split('/ui-src/')[1] ?? file}: ${key}`);
+    }
+  }
   const seen = new Set();
   const add = (text, {oneWordOk = false} = {}) => {
     const clean = text.replace(/\s+/g, ' ').trim();
@@ -157,7 +190,7 @@ for (const file of walk(new URL('.', UI_SRC).pathname)) {
   // Text sitting directly in JSX, which the quoted pass cannot see. The
   // closing </ is required: without it every TypeScript generic reads as copy,
   // because `: Promise<void>` puts a word between a > and a <.
-  for (const [, text] of withoutLogging.matchAll(/>\s*([A-Z][A-Za-z0-9 ,.:;!?'’“”()%·-]{2,120}?)\s*<\//gs)) {
+  for (const [, text] of withoutLogging.matchAll(/>\s*([A-Z][A-Za-z0-9\s,.:;!?'’“”()%·-]{2,500}?)\s*<\//gs)) {
     add(text, {oneWordOk: true});
   }
 
@@ -174,6 +207,7 @@ for (const file of walk(new URL('.', UI_SRC).pathname)) {
 }
 
 if (suspects.length) {
+  problems += suspects.length;
   const byFile = new Map();
   for (const s of suspects) {
     const [file] = s.split(': ');
