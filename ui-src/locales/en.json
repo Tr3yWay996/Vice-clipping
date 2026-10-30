@@ -1238,5 +1238,26 @@
       "retention": "Choose 7, 14, 30 or 90 days, or Never.",
       "connection": "Could not load Trash. Check that the Vice daemon is running, then refresh."
     }
+  },
+  "speed": {
+    "label": "Hold speed",
+    "help": "Tap Space to play or pause. Hold Space to boost; use the wheel to adjust. Choose 2.00× to reset."
+  },
+  "assign": {
+    "open": "Assign recordings to this game",
+    "title": "Assign to {name}",
+    "help": "Choose recordings explicitly. This updates game metadata and automatic playlists without changing files or share links.",
+    "untagged": "Show untagged only",
+    "review": "Review {count} selected",
+    "confirm": {
+      "one": "Assign {count} recording",
+      "other": "Assign {count} recordings"
+    },
+    "back": "Back",
+    "reviewHelp": {
+      "one": "Assign this recording to {name}?",
+      "other": "Assign these {count} recordings to {name}?"
+    },
+    "empty": "No recordings match."
   }
 }

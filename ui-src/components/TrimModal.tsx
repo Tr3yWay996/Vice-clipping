@@ -1,3 +1,4 @@
+import {usePlaybackSpeed, mediaBoost} from './PlaybackSpeed';
 import {useEffect, useMemo, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
@@ -87,6 +88,7 @@ export function TrimModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState(false);
+  const speed = usePlaybackSpeed();
   // Held until the dialog closes. Renaming the file straight away swapped the
   // clip under the dialog, which threw the selection away and, for an H.265
   // clip, made the preview transcode all over again (#226).
@@ -379,9 +381,9 @@ export function TrimModal({
   };
 
   usePlaybackShortcuts(clip !== null && !saving, shortcutRoot, 30, event => playbackShortcut(event, {
-    toggle: togglePlayback, mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
+    toggle: togglePlayback, rename:() => setRenamingTitle(true), mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
     duration: () => total, seek, volume: () => volume, setVolume, boundary: setBoundary,
-  }));
+  }), () => mediaBoost(videoRef, speed.actions), clip?.slug);
 
   if (!clip) return null;
 
@@ -481,7 +483,7 @@ export function TrimModal({
 
           <div className="trim-playback">
             <PlayPauseButton paused={paused} onToggle={togglePlayback} disabled={!total}/>
-            <PlaybackTime current={playhead} duration={total}/>
+            <PlaybackTime current={playhead} duration={total}/>{speed.control}
             <VolumeControl
               volume={volume}
               muted={muted}

@@ -1,3 +1,4 @@
+import {AssignGameModal} from '../AssignGameModal';
 import {useState} from 'react';
 import {api} from '../../lib/api';
 import {t, currentLocale} from '../../lib/i18n';
@@ -15,6 +16,7 @@ const draftFor = (game?:DetectedGame):Draft => ({id:game?.id ?? 'new', name:game
 
 export function DetectedGamesSettings() {
   const {state, saveConfig, refreshGames} = useStore();
+  const [assigning,setAssigning]=useState<string|null>(null);
   const [search,setSearch]=useState('');
   const [filter,setFilter]=useState('all');
   const [draft,setDraft]=useState<Draft|null>(null);
@@ -114,6 +116,7 @@ export function DetectedGamesSettings() {
             {['pending','deferred'].includes(current.status)?<button type="button" className="btn btn-sm" onClick={()=>action(current.id,'confirm')}>{t('games.confirmGame')}</button>:null}
             {current.status==='rejected'?<button type="button" className="btn btn-sm" onClick={()=>action(current.id,'enable')}>{t('games.enable')}</button>:
               <button type="button" className="btn btn-quiet btn-sm" onClick={()=>action(current.id,'reject')}>{t('games.notGame')}</button>}
+            {['recognized','confirmed'].includes(current.status)?<button type="button" className="btn btn-sm" onClick={()=>setAssigning(current.id)}>{t('assign.open')}</button>:null}
             <button type="button" className="btn btn-quiet btn-sm" onClick={()=>setConfirmation({id:current.id,action:'reclassify'})}>{t('games.reclassify')}</button>
             <button type="button" className="btn btn-quiet btn-danger btn-sm" onClick={()=>setConfirmation({id:current.id,action:'remove'})}>{t('games.remove')}</button>
           </div>
@@ -123,6 +126,7 @@ export function DetectedGamesSettings() {
         </>:null}
       </fieldset>{error?<p role="status" className="game-error">{error}</p>:null}</div>:null}
     </Modal>
+    {assigning?<AssignGameModal key={assigning} gameId={assigning} onClose={()=>setAssigning(null)}/>:null}
     <Modal open={confirmation!==null} title={t('games.confirmAction')} onClose={()=>!busy&&setConfirmation(null)}
       footer={<><button type="button" className="btn btn-quiet" disabled={busy} onClick={()=>setConfirmation(null)}>{t('common.cancel')}</button>
         <button type="button" className="btn" disabled={busy} onClick={()=>confirmation&&action(confirmation.id,confirmation.action,confirmation.target)}>{t('games.continue')}</button></>}>

@@ -7,6 +7,7 @@ import type {Clip} from '../lib/types';
 import type {KeyframeInfo} from '../lib/trimming';
 import {setLocale} from '../lib/i18n';
 
+vi.mock('../state/store', () => ({useStore: () => ({state:{config:{ui:{playback_boost:2}}}, saveConfig:vi.fn().mockResolvedValue({}), notify:vi.fn()})}));
 vi.mock('../lib/api', () => ({api: {keyframes: vi.fn(), trimClip: vi.fn()}}));
 const info: KeyframeInfo = {
   timestamps: [0, 11, 22, 39, 51, 59],
@@ -51,9 +52,10 @@ const boundaryClick = async (seconds: number) => {
   await pointer(timeline(), 'pointerup', (seconds / 60) * 1000, true);
 };
 const key = async (element: Element, name: string) => {
-  await act(async () =>
-    element.dispatchEvent(new KeyboardEvent('keydown', {key: name, bubbles: true})),
-  );
+  await act(async () => {
+    element.dispatchEvent(new KeyboardEvent('keydown', {key: name, bubbles: true, cancelable:true}));
+    if (name === ' ') element.dispatchEvent(new KeyboardEvent('keyup', {key:name, bubbles:true, cancelable:true}));
+  });
 };
 async function mount() {
   await act(async () =>
@@ -323,5 +325,25 @@ describe('single-click quick-trimmer title renaming',()=>{
   await mount();await boundaryClick(10);await click(container.querySelector<HTMLElement>('.trim-head-name')!);
   await key(container.querySelector('.trim-rename')!,'Escape');expect(rename).not.toHaveBeenCalled();expect(close).not.toHaveBeenCalled();
   expect(value(startHandle())).toBe(10);expect(container.querySelector('.trim-head-name')).not.toBeNull();
+ });
+});
+
+describe('Quick Trimmer F2 and held Space',()=>{
+ it('opens the deferred rename field on F2 without changing boundaries or playback',async()=>{
+  await mount();video().currentTime=20;await video().play();
+  await key(document.body,'F2');const input=container.querySelector<HTMLInputElement>('.trim-rename')!;
+  expect(document.activeElement).toBe(input);expect(input.selectionEnd).toBe(7);
+  expect(value(startHandle())).toBe(0);expect(value(endHandle())).toBe(60);expect(video().currentTime).toBe(20);expect(video().paused).toBe(false);
+  await key(input,'Escape');expect(close).not.toHaveBeenCalled();expect(rename).not.toHaveBeenCalled();
+ });
+ it('applies speed only to preview and restores when closed while held',async()=>{
+  await mount();vi.useFakeTimers();video().playbackRate=1.25;const media=video();
+  try {
+   await act(async()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:' ',bubbles:true,cancelable:true})));
+   await act(async()=>vi.advanceTimersByTime(260));expect(media.playbackRate).toBe(2);
+   expect(value(startHandle())).toBe(0);expect(value(endHandle())).toBe(60);
+   await act(async()=>root.render(<TrimModal clip={null} highlights={[]} onReveal={vi.fn()} onOpenExternally={vi.fn()} onClose={close} onSaved={vi.fn()} onRename={rename} notify={vi.fn()}/>));
+   expect(media.playbackRate).toBe(1.25);expect(media.paused).toBe(true);
+  } finally {vi.useRealTimers();}
  });
 });

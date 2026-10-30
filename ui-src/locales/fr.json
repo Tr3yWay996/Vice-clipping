@@ -1170,5 +1170,26 @@
       "retention": "Choisis 7, 14, 30 ou 90 jours, ou Jamais.",
       "connection": "Impossible de charger la corbeille. Vérifie que le service Vice fonctionne puis actualise."
     }
+  },
+  "speed": {
+    "label": "Vitesse maintenue",
+    "help": "Appuie sur Espace pour lire ou mettre en pause. Maintiens pour accélérer ; utilise la molette pour ajuster. Choisis 2.00× pour réinitialiser."
+  },
+  "assign": {
+    "open": "Associer des enregistrements à ce jeu",
+    "title": "Associer à {name}",
+    "help": "Choisis les enregistrements. Seules les métadonnées du jeu et les playlists automatiques changent ; les fichiers et les liens de partage sont conservés.",
+    "untagged": "Sans étiquette uniquement",
+    "review": "Vérifier la sélection ({count})",
+    "confirm": {
+      "one": "Associer {count} enregistrement",
+      "other": "Associer {count} enregistrements"
+    },
+    "back": "Retour",
+    "reviewHelp": {
+      "one": "Associer cet enregistrement à {name} ?",
+      "other": "Associer ces {count} enregistrements à {name} ?"
+    },
+    "empty": "Aucun enregistrement ne correspond."
   }
 }

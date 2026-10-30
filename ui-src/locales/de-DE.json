@@ -1170,5 +1170,26 @@
       "retention": "Wähle 7, 14, 30 oder 90 Tage oder Nie.",
       "connection": "Der Papierkorb konnte nicht geladen werden. Prüfe den Vice-Dienst und aktualisiere."
     }
+  },
+  "speed": {
+    "label": "Haltegeschwindigkeit",
+    "help": "Leertaste kurz drücken zum Abspielen/Pausieren. Gedrückt halten zum Beschleunigen; mit dem Mausrad anpassen. Zum Zurücksetzen 2.00× wählen."
+  },
+  "assign": {
+    "open": "Aufnahmen diesem Spiel zuordnen",
+    "title": "Zu {name} zuordnen",
+    "help": "Aufnahmen ausdrücklich auswählen. Nur Spielmetadaten und automatische Playlists werden geändert; Dateien und Freigabelinks bleiben erhalten.",
+    "untagged": "Nur ohne Zuordnung anzeigen",
+    "review": "{count} ausgewählte prüfen",
+    "confirm": {
+      "one": "{count} Aufnahme zuordnen",
+      "other": "{count} Aufnahmen zuordnen"
+    },
+    "back": "Zurück",
+    "reviewHelp": {
+      "one": "Diese Aufnahme {name} zuordnen?",
+      "other": "Diese {count} Aufnahmen {name} zuordnen?"
+    },
+    "empty": "Keine passenden Aufnahmen."
   }
 }

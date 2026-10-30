@@ -1,3 +1,7 @@
+import {usePlaybackSpeed} from '../components/PlaybackSpeed';
+import {InlineRename} from '../components/InlineRename';
+import {useRenameClip} from '../state/clipActions';
+import {clipTitle, type Clip} from '../lib/types';
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
@@ -30,6 +34,10 @@ const TABS: Array<[EdTab, () => string]> = [
 export function Editor() {
   const {state, notify, dispatch} = useStore();
   const audio = usePlaybackAudio();
+  const speed = usePlaybackSpeed();
+  const speedRef = useRef(speed); speedRef.current = speed;
+  const [renamingSource, setRenamingSource] = useState<Clip | null>(null);
+  const renameClip = useRenameClip();
   const audioRef = useRef(audio);
   audioRef.current = audio;
   const {clips, accent, customAccent, editorProjectRevision, config} = state;
@@ -57,6 +65,8 @@ export function Editor() {
     engineRef.current = createEditorEngine({
       clips: () => clipsRef.current,
       monitoring: () => audioRef.current,
+      playbackBoost: () => speedRef.current.actions,
+      renameSource: setRenamingSource,
       notify: (title, tone = 'accent') =>
         notify({
           kind: tone === 'error' ? 'error' : 'info',
@@ -328,7 +338,7 @@ export function Editor() {
             </button>
             <PlayPauseButton className="ed-play" paused={!snap.playing} onToggle={() => engine.setPlaying(!snap.playing)}/>
             <div className="ed-spacer" />
-            <PlaybackTime current={snap.playhead} duration={snap.duration}/>
+            <PlaybackTime current={snap.playhead} duration={snap.duration}/>{speed.control}
             <VolumeControl volume={audio.volume} muted={audio.muted} onChange={audio.setVolume} onToggleMute={audio.toggleMuted}/>
             <button
               type="button"
@@ -386,6 +396,11 @@ export function Editor() {
         </div>
       </div>
 
+      <Modal open={renamingSource !== null} title={t('card.rename')} onClose={() => setRenamingSource(null)}>
+        {renamingSource ? <InlineRename key={renamingSource.slug} className="viewer-rename" label={t('card.nameLabel')}
+          initial={clipTitle(renamingSource)} stopPropagation onCancel={() => setRenamingSource(null)}
+          onSubmit={name => {const source = renamingSource; setRenamingSource(null); void renameClip(source, name);}}/> : null}
+      </Modal>
       <Modal
         open={resetOpen}
         title={t('editor.clearTitle')}

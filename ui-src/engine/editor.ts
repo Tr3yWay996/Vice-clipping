@@ -130,6 +130,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let sel: string | null = null;
   let playhead = 0;
   let playing = false;
+  let playbackRate = 1;
   let monitorVolume = 1;
   let monitorMuted = false;
   let unbindKeyboard: (() => void) | undefined;
@@ -661,6 +662,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         const make = () => {
           const v = document.createElement('video') as PoolVideo;
           v.playsInline = true;
+          v.playbackRate = playbackRate;
           v.preload = 'auto';
           v.className = 'ed-vhide';
           v._key = null;
@@ -1018,6 +1020,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const revision = new URL(clip.video_url, window.location.href).search;
       const url = `/api/clips/${encodeURIComponent(clip.slug)}/audio/${it.audioStream ?? 0}${revision}`;
       if (a.getAttribute('src') !== url) a.src = url;
+      if (a.playbackRate !== playbackRate) a.playbackRate = playbackRate;
       a.volume = Math.max(0, Math.min(1, it.volume ?? 1)) * monitorVolume;
       a.muted = monitorMuted;
       seekVideo(a, (it.offset || 0) + (t - it.start), playTol());
@@ -1246,7 +1249,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const total = end();
     const dt = Math.min(0.25, (now - lastTick) / 1000);
     lastTick = now;
-    playhead = Math.min(total, playhead + dt);
+    playhead = Math.min(total, playhead + dt * playbackRate);
     renderPreviewFrame(false);
 
     // The video, not the wall clock, is the timebase while a clip is on
@@ -1276,6 +1279,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function renderPreviewFrame(structural: boolean) {
     if (!project || !mounted || !box) return;
     initStage();
+    Object.values(pool).forEach(entry => entry.els.forEach(video => {if (video.playbackRate !== playbackRate) video.playbackRate = playbackRate;}));
+    Object.values(audioPool).forEach(audio => {if (audio.playbackRate !== playbackRate) audio.playbackRate = playbackRate;});
     syncPool();
     const t = playhead;
     syncAudio(t);
@@ -1910,7 +1915,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
             .filter(Boolean)
             .join(' · ');
           return `
-      <div class="ed-lib-clip" draggable="true" data-slug="${escAttr(c.slug)}"
+      <div class="ed-lib-clip" tabindex="0" draggable="true" data-slug="${escAttr(c.slug)}"
            title="${escAttr(translate('editor.libClipHint'))}">
         <div class="ed-lib-thumb">
           ${media}
@@ -2046,6 +2051,12 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (!mounted || !project) return false;
     if (e.altKey) return false;
     if (playbackShortcut(e, {
+      rename: () => {
+        const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.ed-lib-clip');
+        const item = selItem();
+        const source = clips().find(clip => clip.slug === (focused?.dataset.slug ?? (item?.kind !== 'text' ? item?.clipId : undefined)));
+        if (source) deps.renameSource?.(source);
+      },
       toggle: () => setPlaying(!playing), mute: () => {
         if (deps.monitoring) deps.monitoring().toggleMuted();
         else setMonitoring(monitorVolume, !monitorMuted);
@@ -2089,7 +2100,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     mounted = true;
     unbindKeyboard?.();
     unbindKeyboard = bindPlaybackShortcuts({root: () => box?.stage.closest<HTMLElement>('.editor') ?? box?.stage ?? null,
-      priority:20, handle:onKeyDown});
+      priority:20, handle:onKeyDown, boost:() => deps.playbackBoost ? ({
+        ...deps.playbackBoost(), rate:() => playbackRate, paused:() => !playing,
+        play:() => setPlaying(true), pause:() => setPlaying(false),
+        setRate:rate => {playbackRate = rate; renderPreviewFrame(false);},
+      }) : null});
     wireStage();
     refreshMissing();
     renderLibrary();

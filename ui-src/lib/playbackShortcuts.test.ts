@@ -1,4 +1,4 @@
-import {afterEach,describe,expect,it,vi} from 'vitest';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {bindPlaybackShortcuts,playbackShortcut} from './playbackShortcuts';
 const cleanups:Array<()=>void>=[];
 afterEach(()=>{cleanups.splice(0).reverse().forEach(fn=>fn());document.body.replaceChildren();});
@@ -33,5 +33,37 @@ describe('one shared playback shortcut dispatcher',()=>{
   cleanups.push(bindPlaybackShortcuts({root:()=>editor,priority:20,handle}));
   const modal=root(true);editor.append(modal);
   key('ArrowRight');expect(handle).not.toHaveBeenCalled();
+ });
+});
+
+describe('Space tap/hold ownership and recovery',()=>{
+ let rate:number,paused:boolean,multiplier:number,toggle:ReturnType<typeof vi.fn<() => void>>;
+ beforeEach(()=>{vi.useFakeTimers();rate=1.25;paused=true;multiplier=2;toggle=vi.fn(()=>{paused=!paused;});});
+ afterEach(()=>vi.useRealTimers());
+ function bind(el:HTMLElement){const control={rate:()=>rate,setRate:(n:number)=>{rate=n;},paused:()=>paused,
+  play:()=>{paused=false;},pause:()=>{paused=true;},multiplier:()=>multiplier,setMultiplier:(n:number)=>{multiplier=n;}};
+  const unbind=bindPlaybackShortcuts({root:()=>el,priority:10,handle:e=>playbackShortcut(e,{toggle,mute:vi.fn()}),boost:()=>control});cleanups.push(unbind);return unbind;
+ }
+ const up=()=>document.body.dispatchEvent(new KeyboardEvent('keyup',{key:' ',bubbles:true,cancelable:true}));
+ it('toggles once on short release, ignores repeat, and prevents page scrolling',()=>{
+  bind(root());expect(key(' ').defaultPrevented).toBe(true);key(' ',document.body,{repeat:true});
+  vi.advanceTimersByTime(100);expect(toggle).not.toHaveBeenCalled();up();expect(toggle).toHaveBeenCalledOnce();expect(paused).toBe(false);expect(rate).toBe(1.25);
+ });
+ it.each([true,false])('boosts, adjusts and restores rate and prior paused=%s without a toggle',initial=>{
+  paused=initial;bind(root());key(' ');vi.advanceTimersByTime(250);expect(rate).toBe(2);expect(paused).toBe(false);
+  const event=new WheelEvent('wheel',{deltaY:-1,bubbles:true,cancelable:true});document.body.dispatchEvent(event);expect(event.defaultPrevented).toBe(true);expect(rate).toBe(2.25);
+  for(let n=0;n<50;n++)document.body.dispatchEvent(new WheelEvent('wheel',{deltaY:1,bubbles:true,cancelable:true}));expect(rate).toBe(.25);
+  up();expect(rate).toBe(1.25);expect(paused).toBe(initial);expect(toggle).not.toHaveBeenCalled();
+ });
+ it.each(['blur','typing','unmount','modal'])('restores on %s, discards pending taps and ignores a late release',async reason=>{
+  const el=root();const unbind=bind(el);key(' ');vi.advanceTimersByTime(300);
+  if(reason==='blur')window.dispatchEvent(new Event('blur'));
+  if(reason==='typing'){const input=document.createElement('input');el.append(input);input.focus();}
+  if(reason==='unmount')unbind();
+  if(reason==='modal'){root(true);await Promise.resolve();}
+  expect(rate).toBe(1.25);expect(paused).toBe(true);up();expect(toggle).not.toHaveBeenCalled();
+ });
+ it('does not boost or consume Space while typing or on native buttons',()=>{
+  const el=root();bind(el);for(const tag of ['input','button']){const child=document.createElement(tag);el.append(child);key(' ',child);vi.advanceTimersByTime(300);up();expect(rate).toBe(1.25);expect(toggle).not.toHaveBeenCalled();}
  });
 });

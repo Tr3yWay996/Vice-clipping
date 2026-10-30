@@ -67,5 +67,7 @@ export interface EditorDeps {
   clips: () => Clip[];
   notify: (title: string, tone?: 'accent' | 'error') => void;
   accent: () => string;
+  renameSource?: (clip: Clip) => void;
+  playbackBoost?: () => Pick<import('../lib/playbackBoost').PlaybackBoost, 'multiplier' | 'setMultiplier' | 'changed'>;
   monitoring?: () => {volume: number; setVolume: (level: number) => void; toggleMuted: () => void};
 }
