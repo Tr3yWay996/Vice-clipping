@@ -199,6 +199,20 @@ class GameLibrary:
                   ('executables', identity['executable'], 800), ('classes', identity['cls'], 700)]
         score = max((weight for field, value, weight in values if value and value in
                      [(normalized_path(x) if field == 'paths' else x.casefold()) for x in rules[field]]), default=0)
+        # Wine's /proc/exe can identify the loader while comm names the game.
+        # Accept exact comm, or Linux's exact 15-byte truncation, never a loose
+        # substring. Conflicting truncated rules remain ambiguous in resolve().
+        proc = identity['process']
+        for raw in rules['executables']:
+            name = leaf(raw)
+            if meaningful(name) and (proc == name or
+                    len(proc.encode()) == 15 and len(name.encode()) > 15 and
+                    name.encode()[:15] == proc.encode() and (identity['executable'] == proc or not meaningful(identity['executable']))):
+                score = max(score, 750)
+        for raw in rules['classes']:
+            name = str(raw).casefold()
+            if meaningful(name) and identity['cls'].endswith('.' + name):
+                score = max(score, 700)
         if not score and identity['title']:
             if any(fnmatch.fnmatchcase(identity['title'].casefold(), pattern.casefold()) for pattern in rules['titles']):
                 score = 500

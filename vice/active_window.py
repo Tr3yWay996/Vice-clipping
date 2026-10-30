@@ -323,7 +323,14 @@ def _candidate_windows_wmctrl() -> list[ActiveWindow]:
             pid = int(parts[2])
         except ValueError:
             continue
-        cls = parts[3].split(".")[-1]
+        raw_class = parts[3]
+        middle = len(raw_class) // 2
+        # wmctrl joins instance.class with a dot. Wine names often contain
+        # dots themselves: rsplit('.') turns RocketLeague.exe into just exe.
+        # Unwrap identical halves; preserve the composite otherwise so known
+        # class rules can match its complete suffix.
+        cls = (raw_class[:middle] if raw_class[middle:middle + 1] == '.' and
+               raw_class[:middle].casefold() == raw_class[middle + 1:].casefold() else raw_class)
         proc = _read_proc_comm(pid) if pid else ""
         if cls or proc:
             windows.append({"process": proc, "class": cls, "pid": pid})
