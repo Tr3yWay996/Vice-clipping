@@ -1,3 +1,4 @@
+import {currentLocale} from './i18n';
 /** Formatting shared across screens. */
 
 /**
@@ -10,7 +11,7 @@
 export function formatDuration(seconds: number, withUnit = false): string {
   if (!Number.isFinite(seconds) || seconds < 0) return withUnit ? '0s' : '0:00';
   const whole = Math.floor(seconds);
-  if (withUnit && seconds < 60) return `${seconds.toFixed(seconds % 1 ? 1 : 0)}s`;
+  if (withUnit && seconds < 60) return `${formatNumber(seconds, seconds % 1 ? 1 : 0)}s`;
   const m = Math.floor(whole / 60);
   const s = whole % 60;
   if (m >= 60) {
@@ -68,4 +69,9 @@ export function relativeTime(isoTimestamp: string | null | undefined): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
   return new Date(then).toLocaleDateString();
+}
+
+/** All numeric UI readouts follow the selected application language. */
+export function formatNumber(value: number, digits = 0): string {
+  return new Intl.NumberFormat(currentLocale(), {minimumFractionDigits: digits, maximumFractionDigits: digits}).format(value);
 }

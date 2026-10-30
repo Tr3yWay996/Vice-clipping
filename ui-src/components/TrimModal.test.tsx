@@ -5,6 +5,7 @@ import {api} from '../lib/api';
 import {TrimModal} from './TrimModal';
 import type {Clip} from '../lib/types';
 import type {KeyframeInfo} from '../lib/trimming';
+import {setLocale} from '../lib/i18n';
 
 vi.mock('../lib/api', () => ({api: {keyframes: vi.fn(), trimClip: vi.fn()}}));
 const info: KeyframeInfo = {
@@ -37,16 +38,16 @@ const button = (text: string) =>
 const click = async (element: HTMLElement) => {
   await act(async () => element.click());
 };
-const pointer = async (element: Element, type: string, x: number) => {
+const pointer = async (element: Element, type: string, x: number, shift = false) => {
   await act(async () => {
-    const event = new MouseEvent(type, {bubbles: true, clientX: x, button: 0});
+    const event = new MouseEvent(type, {bubbles: true, clientX: x, button: 0, shiftKey: shift});
     Object.defineProperty(event, 'pointerId', {value: 1});
     element.dispatchEvent(event);
   });
 };
-const timelineClick = async (seconds: number) => {
-  await pointer(timeline(), 'pointerdown', (seconds / 60) * 1000);
-  await pointer(timeline(), 'pointerup', (seconds / 60) * 1000);
+const boundaryClick = async (seconds: number) => {
+  await pointer(timeline(), 'pointerdown', (seconds / 60) * 1000, true);
+  await pointer(timeline(), 'pointerup', (seconds / 60) * 1000, true);
 };
 const key = async (element: Element, name: string) => {
   await act(async () =>
@@ -82,9 +83,22 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  setLocale('en');
 });
 
 describe('unified trimming timeline', () => {
+  it('normal clicks seek freely without modifying trim boundaries in either keyframe mode', async () => {
+    await mount();
+    for (const show of [false, true]) {
+      if (show) await click(checkbox());
+      await pointer(timeline(), 'pointerdown', 250);
+      await pointer(timeline(), 'pointerup', 250);
+      expect(value(startHandle())).toBe(0);
+      expect(value(endHandle())).toBe(60);
+      expect(video().currentTime).toBe(15);
+    }
+  });
+
   it('has one timeline, custom playback, volume and synchronized media time', async () => {
     await mount();
     expect(video().controls).toBe(false);
@@ -99,12 +113,12 @@ describe('unified trimming timeline', () => {
     await click(container.querySelector('[aria-label="Pause"]')!);
     expect(video().paused).toBe(true);
   });
-  it('clicks move the nearest boundary and seek precisely', async () => {
+  it('Shift-clicks move the nearest boundary and seek precisely', async () => {
     await mount();
-    await timelineClick(10);
-    await timelineClick(50);
-    await timelineClick(15);
-    await timelineClick(45);
+    await boundaryClick(10);
+    await boundaryClick(50);
+    await boundaryClick(15);
+    await boundaryClick(45);
     expect(value(startHandle())).toBe(15);
     expect(value(endHandle())).toBe(45);
     expect(video().currentTime).toBe(45);
@@ -137,7 +151,7 @@ describe('unified trimming timeline', () => {
   it('showing keys snaps clicks and handles; hiding restores free editing', async () => {
     await mount();
     await click(checkbox());
-    await timelineClick(15);
+    await boundaryClick(15);
     expect(value(startHandle())).toBe(11);
     expect(video().currentTime).toBe(11);
     const markers = container.querySelectorAll<HTMLElement>('.trim-keyframe');
@@ -148,27 +162,27 @@ describe('unified trimming timeline', () => {
     await pointer(endHandle(), 'pointerup', 760);
     expect(value(endHandle())).toBe(51);
     await click(checkbox());
-    await timelineClick(15);
+    await boundaryClick(15);
     expect(value(startHandle())).toBe(15);
     expect(container.querySelector('.trim-keyframe')).toBeNull();
   });
   it('manual snapping adjusts both endpoints with visualization disabled', async () => {
     await mount();
-    await timelineClick(15);
-    await timelineClick(45);
+    await boundaryClick(15);
+    await boundaryClick(45);
     await click(button('Snap selection to keyframes'));
     expect(value(startHandle())).toBe(11);
     expect(value(endHandle())).toBe(39);
     expect(video().currentTime).toBe(11);
     expect(checkbox().checked).toBe(false);
-    await timelineClick(15);
+    await boundaryClick(15);
     expect(value(startHandle())).toBe(15);
   });
   it('an impossible manual snap leaves selection intact and explains why', async () => {
     vi.mocked(api.keyframes).mockResolvedValue({...info, timestamps: [22], total_keyframes: 1});
     await mount();
-    await timelineClick(15);
-    await timelineClick(45);
+    await boundaryClick(15);
+    await boundaryClick(45);
     await click(button('Snap selection to keyframes'));
     expect(value(startHandle())).toBe(15);
     expect(value(endHandle())).toBe(45);
@@ -188,6 +202,17 @@ describe('unified trimming timeline', () => {
     expect(details.textContent).toContain('60.000 FPS average · 60.000 nominal');
     await click(details.querySelector('summary')!);
     expect(details.open).toBe(false);
+  });
+  it('translates keyframe controls and formats French statistics with decimal commas', async () => {
+    setLocale('fr');
+    await mount();
+    const details = container.querySelector('details')!;
+    await click(details.querySelector('summary')!);
+    expect(details.textContent).toContain('Informations sur les images clés');
+    expect(details.textContent).toContain('Toutes les 11,800 secondes');
+    expect(details.textContent).toContain('0,17 %');
+    expect(container.textContent).not.toContain('Show keyframes');
+    expect(container.textContent).toContain('Maj + clic');
   });
   it('preserves highlights, keyboard seeking, boundary adjustment, looping and Escape', async () => {
     await mount();
@@ -209,7 +234,7 @@ describe('unified trimming timeline', () => {
   it('failed analysis leaves ordinary trimming usable and communicates failure', async () => {
     vi.mocked(api.keyframes).mockRejectedValue(new Error('missing ffprobe'));
     await mount();
-    await timelineClick(15);
+    await boundaryClick(15);
     expect(value(startHandle())).toBe(15);
     expect(checkbox().disabled).toBe(true);
     expect(container.querySelector('[role=status]')?.textContent).toContain(

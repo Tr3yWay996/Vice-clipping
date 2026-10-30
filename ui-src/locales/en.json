@@ -384,7 +384,8 @@
     "ratioValue": "1 keyframe per {frames} frames ({percent}%)",
     "intervalSeconds": "Every {seconds} seconds",
     "fpsValue": "{average} FPS average · {nominal} nominal",
-    "keyframeHelp": "Showing keyframes also snaps trim handles. Intervals use actual timestamps; frame counts may be estimated for variable frame rates. Alignment improves the chance of stream copying; Vice still validates the cut and re-encodes when needed."
+    "keyframeHelp": "Showing keyframes also snaps trim handles. Intervals use actual timestamps; frame counts may be estimated for variable frame rates. Alignment improves the chance of stream copying; Vice still validates the cut and re-encodes when needed.",
+    "timelineHint": "Click to seek · Shift + click to adjust the nearest trim boundary"
   },
   "images": {
     "heading": "Images",
