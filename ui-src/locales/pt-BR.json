@@ -110,7 +110,8 @@
     "copyLinkBody": "Área de transferência indisponível, aqui está o link para ser copiado à mão.",
     "restartTitle": "Reinicie o Vice para aplicar",
     "restartBody": "A configuração foi salva, mas só terá efeito quand o daemon for reiniciado.",
-    "gotIt": "Entendi"
+    "gotIt": "Entendi",
+    "publicLinkActive": "Link público ativo"
   },
   "card": {
     "unreadable": "Ilegível",

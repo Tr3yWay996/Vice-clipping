@@ -7,6 +7,7 @@ import {HomeImages} from '../components/HomeImages';
 import {OverlayPortal} from '../components/OverlayPortal';
 import {usePlaylistDropTarget} from '../lib/clipDrag';
 import {api} from '../lib/api';
+import {publicLinkState} from '../lib/publicLink';
 import {copyToClipboard} from '../lib/clipboard';
 import {formatBytes, formatDuration, relativeTime} from '../lib/format';
 import {t, tNode} from '../lib/i18n';
@@ -46,7 +47,7 @@ function greeting(): string {
 
 export function Home() {
   const {state, dispatch, hotkey, saveConfig, notify} = useStore();
-  const {clips, playlists, config, tunnelUrl, recentNew, status} = state;
+  const {clips, playlists, config, recentNew, status} = state;
 
   const {actions, overlays} = useClipActions();
   const layout = useHomeLayout();
@@ -59,6 +60,12 @@ export function Home() {
   const captureAudio = config?.recording?.capture_audio !== false;
   const captureMic = Boolean(config?.recording?.capture_microphone);
   const tunnelOn = Boolean(config?.sharing?.cloudflare_tunnel);
+  const {url: tunnelUrl, phase: linkPhase} = publicLinkState(
+    status, state.statusSynced, config === null || tunnelOn, state.tunnelError,
+  );
+  const linkLabel = linkPhase === 'active'
+    ? t('home.publicLinkActive')
+    : linkPhase === 'connecting' ? t('home.connecting') : t('home.localOnly');
   const gameCapture = Boolean(config?.recording?.window_capture);
   // Window pinning is GSR-only, and status.backend is what is actually
   // running rather than the configured "auto".
@@ -214,7 +221,7 @@ export function Home() {
   const linkTile = (
     <Tile
       label={t('home.publicLink')}
-      detail={tunnelOn ? (tunnelUrl ? t('home.active') : t('home.starting')) : t('home.off')}
+      detail={linkLabel}
       on={tunnelOn}
       busy={busy === 'tunnel'}
       icon={<GlobeIcon />}
@@ -249,14 +256,14 @@ export function Home() {
         <b>
           {tunnelUrl
             ? tunnelHost(tunnelUrl)
-            : tunnelOn
+            : linkPhase === 'connecting'
               ? t('home.connecting')
               : t('home.localOnly')}
         </b>
         <span className="tile-mono">
           {tunnelUrl
             ? t('home.tapToCopy')
-            : tunnelOn
+            : linkPhase === 'connecting'
               ? t('home.cloudflaredStarting')
               : t('home.linksWorkOnNetwork')}
         </span>

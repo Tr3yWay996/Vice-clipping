@@ -118,7 +118,8 @@
     "gameCaptureOn": "Capture de jeu activée",
     "gameCaptureOff": "Capture de jeu désactivée",
     "gameCaptureOnDetail": "L'enregistrement suit la fenêtre du jeu au premier plan",
-    "errGameCapture": "Impossible de modifier la capture de jeu"
+    "errGameCapture": "Impossible de modifier la capture de jeu",
+    "publicLinkActive": "Lien public actif"
   },
   "card": {
     "unreadable": "Illisible",

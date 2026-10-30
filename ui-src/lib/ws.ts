@@ -18,7 +18,10 @@ export function onWsMessage(fn: (msg: WsMessage) => void): () => void {
  * The daemon's WebSocket. Reconnects on close, because the daemon restarting
  * under a window that stays open is normal (package upgrade, watchdog).
  */
-export function connectWs(onMessage: (msg: WsMessage) => void): () => void {
+export function connectWs(
+  onMessage: (msg: WsMessage) => void,
+  lifecycle: {onOpen?: () => void; onClose?: () => void} = {},
+): () => void {
   let socket: WebSocket | null = null;
   let retry: number | undefined;
   let closed = false;
@@ -26,8 +29,14 @@ export function connectWs(onMessage: (msg: WsMessage) => void): () => void {
   const open = () => {
     if (closed) return;
     try {
-      socket = new WebSocket(`ws://${location.host}/ws`);
+      socket = new WebSocket(
+        `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`,
+      );
+      socket.onopen = () => {
+        if (!closed) lifecycle.onOpen?.();
+      };
       socket.onmessage = event => {
+        if (closed) return;
         try {
           const msg = JSON.parse(event.data as string) as WsMessage;
           onMessage(msg);
@@ -37,7 +46,10 @@ export function connectWs(onMessage: (msg: WsMessage) => void): () => void {
         }
       };
       socket.onclose = () => {
-        if (!closed) retry = window.setTimeout(open, 3000);
+        if (!closed) {
+          lifecycle.onClose?.();
+          retry = window.setTimeout(open, 3000);
+        }
       };
       socket.onerror = () => {
         // onclose always follows, and that is where the retry lives.

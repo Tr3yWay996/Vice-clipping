@@ -37,7 +37,7 @@ const post = <T>(path: string, body?: unknown) =>
 const enc = (segment: string) => encodeURIComponent(segment);
 
 export const api = {
-  status: () => request<Status>('/api/status'),
+  status: () => request<Status>('/api/status', {cache: 'no-store'}),
 
   getConfig: () => request<Config>('/api/config'),
   /**

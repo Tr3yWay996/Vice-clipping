@@ -122,7 +122,8 @@
     "copyLinkBody": "The clipboard was not available, so here is the link to copy by hand.",
     "restartTitle": "Restart Vice to finish",
     "restartBody": "That setting is saved, but it only takes effect once the daemon restarts.",
-    "gotIt": "Got it"
+    "gotIt": "Got it",
+    "publicLinkActive": "Public link active"
   },
   "card": {
     "unreadable": "Unreadable",
