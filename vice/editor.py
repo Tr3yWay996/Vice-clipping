@@ -801,8 +801,9 @@ class ExportManager:
     """Runs at most one export at a time, streaming progress to the UI over
     the share server's WebSocket."""
 
-    def __init__(self, broadcast: Callable[[dict], Awaitable[None]]) -> None:
+    def __init__(self, broadcast: Callable[[dict], Awaitable[None]], lock=None) -> None:
         self._broadcast = broadcast
+        self._resource_lock = lock
         self._job_id: Optional[str] = None
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._task: Optional[asyncio.Task] = None
@@ -810,6 +811,8 @@ class ExportManager:
         self._started = False
         self._committed = False
         self._stopping = False
+        self._result = None
+        self._process = None
 
     @property
     def busy(self) -> bool:
@@ -819,9 +822,13 @@ class ExportManager:
               tmp_path: Path, final_path: Path,
               on_done: Optional[Callable[[Path], Awaitable[Optional[dict]]]] = None,
               cleanup: Optional[Callable[[], None]] = None,
-              max_bytes: Optional[int] = None) -> None:
+              max_bytes: Optional[int] = None, process=None) -> None:
         if self.busy or self._stopping:
             raise ExportBusy()
+        from .processing import MediaProcess
+        self._process = process or MediaProcess()
+        self._queued_process = process is not None
+        self._result = None
         self._job_id = job_id
         self._canceled = False
         self._started = False
@@ -831,81 +838,39 @@ class ExportManager:
             self._run(job_id, cmd, total, tmp_path, final_path, on_done, cleanup,
                       max_bytes))
 
+    async def _publish(self, message):
+        if message['type'] in {'export_done', 'export_error'}:
+            self._result = message
+        await self._broadcast(message)
+
+    async def wait(self):
+        if self._task:
+            await asyncio.shield(self._task)
+        return self._result
+
     async def _run(self, job_id: str, cmd: list[str], total: float,
                    tmp: Path, final: Path, on_done, cleanup,
                    max_bytes: Optional[int] = None) -> None:
         self._started = True
-        proc = None
-        spawn_task = None
-        err_task = None
+        locked = False
         try:
+            if self._resource_lock is not None and not self._queued_process:
+                await self._resource_lock.acquire()
+                locked = True
             if self._canceled:
                 return
-            try:
-                # Cancellation must not lose ownership between spawning the
-                # process and receiving its handle. Cleanup awaits this task.
-                spawn_task = asyncio.create_task(asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ))
-                proc = await asyncio.shield(spawn_task)
-            except FileNotFoundError:
-                await self._broadcast({"type": "export_error", "job_id": job_id,
-                                       "error": "ffmpeg not found", "canceled": False})
-                return
-            self._proc = proc
-
-            stderr_tail = bytearray()
-
-            async def drain_stderr() -> None:
-                while True:
-                    chunk = await proc.stderr.read(4096)
-                    if not chunk:
-                        return
-                    stderr_tail.extend(chunk)
-                    del stderr_tail[:-4096]
-
-            err_task = asyncio.create_task(drain_stderr())
-            last_pct, last_sent = -1, 0.0
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                frac = parse_progress(line.decode(errors="replace").strip(), total)
-                if frac is None:
-                    continue
-                pct, now = int(frac * 100), time.monotonic()
-                if pct != last_pct and (now - last_sent >= 0.25 or pct >= 100):
-                    last_pct, last_sent = pct, now
-                    await self._broadcast({"type": "export_progress",
-                                           "job_id": job_id,
-                                           "progress": round(frac, 3)})
-            await proc.wait()
-            await err_task
-
-            if proc.returncode != 0 or not tmp.exists():
-                tmp.unlink(missing_ok=True)
-                err = bytes(stderr_tail).decode(errors="replace").strip()[-300:]
-                await self._broadcast({
-                    "type": "export_error", "job_id": job_id,
-                    "error": err or f"ffmpeg exited with {proc.returncode}",
-                    "canceled": False,
-                })
-                return
-
-            # A bitrate target is a request, not a guarantee: check what the
-            # encoder actually produced before it becomes the export.
-            size = tmp.stat().st_size if max_bytes is not None else 0
-            if max_bytes is not None and size > max_bytes:
-                await self._broadcast({
-                    "type": "export_error", "job_id": job_id,
-                    "error": f"the export came out at {size / 1048576:.1f} MB, "
-                             f"over the {max_bytes // 1048576} MB limit",
-                    "canceled": False,
-                })
-                return
-
+            async def progress(fraction, speed):
+                await self._publish({'type': 'export_progress', 'job_id': job_id,
+                                     'progress': round(fraction, 3), 'speed': speed})
+            def spawned(proc):
+                self._proc = proc
+            code, error = await self._process.run(cmd, total, progress, on_spawn=spawned)
+            if code != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+                raise ValueError(error or f'ffmpeg exited with {code}')
+            if max_bytes is not None and tmp.stat().st_size > max_bytes:
+                raise ValueError(f'the export came out at {tmp.stat().st_size / 1048576:.1f} MB, '
+                                 f'over the {max_bytes // 1048576} MB limit')
+            await self._publish({'type': 'export_finalizing', 'job_id': job_id})
             tmp.replace(final)
             self._committed = True
             clip = None
@@ -913,47 +878,31 @@ class ExportManager:
                 try:
                     clip = await on_done(final)
                 except Exception as exc:
-                    log.warning("Export post-processing failed: %s", exc)
-            await self._broadcast({"type": "export_done", "job_id": job_id,
-                                   "path": str(final), "clip": clip})
+                    log.warning('Export post-processing failed: %s', exc)
+            await self._publish({'type': 'export_done', 'job_id': job_id,
+                                 'path': str(final), 'clip': clip})
         except asyncio.CancelledError:
             self._canceled = True
             raise
         except Exception as exc:
-            log.warning("Export %s failed: %s", job_id, exc)
-            await self._broadcast({"type": "export_error", "job_id": job_id,
-                                   "error": str(exc), "canceled": False})
+            log.warning('Export %s failed: %s', job_id, exc)
+            await self._publish({'type': 'export_error', 'job_id': job_id,
+                                 'error': str(exc), 'canceled': False})
         finally:
-            if proc is None and spawn_task is not None:
-                try:
-                    proc = await spawn_task
-                    self._proc = proc
-                except OSError:
-                    pass  # Spawn failures are reported by the main path.
-            if proc is not None and proc.returncode is None:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
-            if err_task is not None:
-                err_task.cancel()
-                await asyncio.gather(err_task, return_exceptions=True)
-            if proc is not None:
-                # The progress reader has stopped. Drain both pipes while
-                # reaping, including when cancellation interrupted a read.
-                await proc.communicate()
+            if locked:
+                self._resource_lock.release()
             try:
                 tmp.unlink(missing_ok=True)
             except OSError as exc:
-                log.debug("Could not remove export temporary file %s: %s", tmp, exc)
+                log.debug('Could not remove export temporary file %s: %s', tmp, exc)
             if cleanup:
                 try:
                     cleanup()
                 except Exception as exc:
-                    log.debug("Export cleanup failed: %s", exc)
+                    log.debug('Export cleanup failed: %s', exc)
             if self._canceled:
-                await self._broadcast({"type": "export_error", "job_id": job_id,
-                                       "error": "export canceled", "canceled": True})
+                await self._publish({'type': 'export_error', 'job_id': job_id,
+                                     'error': 'export canceled', 'canceled': True})
 
     async def cancel(self, job_id: str) -> bool:
         if job_id != self._job_id or not self.busy or self._committed:

@@ -284,12 +284,17 @@ class NotificationsConfig:
 
 @dataclass
 class UIConfig:
+    home_side_panel: str = 'queue'
     # Let Chromium decode clip previews on the GPU. Off by default: hardware
     # decode draws a black rectangle on a lot of Linux GPU and driver
     # combinations, and a laggy preview beats no picture (#140). Worth turning
     # on for high-resolution AV1 or HEVC clips that the CPU cannot keep up
     # with. Takes effect the next time the Vice window opens.
     hardware_video_decode: bool = False
+
+    def __post_init__(self):
+        if self.home_side_panel not in {'queue', 'images'}:
+            self.home_side_panel = 'queue'
 
 
 @dataclass

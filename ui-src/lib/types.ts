@@ -142,6 +142,7 @@ export interface Config {
 
 /** Every message the daemon broadcasts. */
 export type WsMessage =
+  | {type: 'jobs_changed'; jobs: ProcessingJob[]}
   | {type: 'clip_saved'; clip: Clip}
   | {type: 'clip_deleted'; slug: string}
   | {type: 'image_saved'; image: Image}
@@ -186,3 +187,24 @@ export function imageTitle(image: Image): string {
 export const IMAGE_PREFIX = 'img:';
 
 export const imageSlug = (slug: string) => `${IMAGE_PREFIX}${slug}`;
+
+export interface ProcessingJob {
+  id: string;
+  operation: 'trim' | 'export' | 'prepare';
+  name: string;
+  source_revision: string | null;
+  output_path: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration: number | null;
+  progress: number | null;
+  elapsed: number;
+  remaining: number | null;
+  speed: number | null;
+  stage: string;
+  status: 'queued' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
+  error: string | null;
+  result_path: string | null;
+  can_pause: boolean;
+}

@@ -51,6 +51,7 @@ from .editor import (DISCORD_MAX_BYTES, DiscordTooLarge, EditorProjectStore,
                      validate_project)
 from .media import communicate_with_timeout, media_revision, probe_media, probe_media_detailed
 from .keyframes import KeyframeCache
+from .jobs import ProcessingQueue
 from .playlists import (IMAGE_PREFIX, PlaylistStore, build_tag_index,
                         image_slug)
 from .recorder import (IMAGE_EXTS, KEEP_ALL_STREAMS, _available_encoders,
@@ -735,7 +736,7 @@ _DISCORD_TIMEOUT = 600
 
 
 async def _make_discord_copy(path: Path, duration: float,
-                            audio_streams: int = 1) -> Optional[Path]:
+                            audio_streams: int = 1, process=None, progress=None) -> Optional[Path]:
     """Return a copy of *path* small enough to drop into a Discord chat.
 
     The source itself when it already fits, a cached H.264 transcode when it
@@ -781,13 +782,15 @@ async def _make_discord_copy(path: Path, duration: float,
         "-y", str(tmp),
     ]
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await communicate_with_timeout(proc, timeout=_DISCORD_TIMEOUT)
-        if proc.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
+        if process:
+            code, error = await process.run(cmd, duration, progress)
+            stderr = error.encode()
+        else:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE)
+            _, stderr = await communicate_with_timeout(proc, timeout=_DISCORD_TIMEOUT)
+            code = proc.returncode
+        if code != 0 or not tmp.exists() or tmp.stat().st_size == 0:
             log.warning("Discord copy of %s failed: %s", path.name,
                         (stderr or b"").decode(errors="replace")[:200])
             return None
@@ -1066,12 +1069,13 @@ class ShareServer:
         self._share_tokens = _load_share_tokens()
         self._share_slugs = {token: slug for slug, token in self._share_tokens.items()}
         self.editor_project = EditorProjectStore()
-        self._exports = ExportManager(self.broadcast)
 
         # One encoder across the library, shared by preview proxies and
         # Discord copies. Different clips used to spawn independent encoders,
         # each allocating its own frame queues (#193).
         self._proxy_lock = asyncio.Lock()
+        self._exports = ExportManager(self._export_event, lock=self._proxy_lock)
+        self._jobs = ProcessingQueue(self.broadcast, self._run_job, lock=self._proxy_lock)
         self._proxy_tasks: set[asyncio.Task] = set()
         self._proxy_stopping = False
 
@@ -1165,6 +1169,10 @@ class ShareServer:
         r.add_get("/api/displays",             self._api_get_displays)
         r.add_get("/api/audio-sources",        self._api_get_audio_sources)
         r.add_post("/api/config",              self._api_set_config)
+        r.add_get("/api/jobs", self._api_jobs)
+        r.add_post("/api/jobs/{jid}/{action}", self._api_job_control)
+        r.add_get("/api/clips/{slug}/file", self._api_clip_file)
+        r.add_post("/api/clips/{slug}/prepare", self._api_queue_prepare)
         r.add_get("/api/status",               self._api_status)
         r.add_post("/api/update/check",         self._api_check_update)
         r.add_post("/api/trigger",             self._api_trigger)
@@ -1241,11 +1249,14 @@ class ShareServer:
                     exc,
                 )
 
+        self._jobs.start()
         if self.cfg.sharing.cloudflare_tunnel:
             await self._start_tunnel(public_port)
 
     async def stop(self) -> None:
         self._proxy_stopping = True
+        if hasattr(self, "_jobs"):
+            await self._jobs.stop()
         tasks = list(self._proxy_tasks)
         for task in tasks:
             task.cancel()
@@ -1760,13 +1771,15 @@ class ShareServer:
             cached = _discord_path(path)
             if cached.exists() and 0 < cached.stat().st_size <= DISCORD_MAX_BYTES:
                 return cached
-            async with self._proxy_lock:
-                meta = await self._get_meta(slug, path)
-                return await _make_discord_copy(
-                    path,
-                    meta.get("duration", 0),
-                    meta.get("audio_streams", 1),
-                )
+            if path.suffix.lower() == '.mp4' and path.stat().st_size <= DISCORD_MAX_BYTES:
+                return path
+            job = await self._submit_prepare(slug, path)
+            result = await self._jobs.wait(job['id'])
+            if result['status'] == 'completed':
+                return Path(result['result_path'])
+            if result.get('error'):
+                log.warning('Sharing preparation failed: %s', result['error'])
+            return None
         finally:
             self._proxy_tasks.discard(task)
 
@@ -1813,6 +1826,129 @@ class ShareServer:
         return web.FileResponse(t, headers={"Content-Type": "image/jpeg"})
 
     # ── REST handlers ─────────────────────────────────────────────────────────
+
+    async def _export_event(self, event):
+        if event.get('type') == 'export_finalizing' and getattr(self, '_jobs', None) and self._jobs.current:
+            await self._jobs.stage('saving')
+        if event.get('type') == 'export_progress' and getattr(self, '_jobs', None) and self._jobs.current:
+            await self._jobs.progress(event['progress'], event.get('speed'))
+        await self.broadcast(event)
+
+    async def _api_jobs(self, req):
+        return web.json_response({'jobs': self._jobs.snapshot()}, headers={'Cache-Control': 'no-store'})
+
+    async def _api_job_control(self, req):
+        jid, action = req.match_info['jid'], req.match_info['action']
+        try:
+            if action in {'open', 'reveal'}:
+                job = next((j for j in self._jobs.jobs if j['id'] == jid and j['status'] == 'completed'), None)
+                if not job or not job.get('result_path') or not Path(job['result_path']).is_file():
+                    raise ValueError('Completed output is unavailable')
+                path = Path(job['result_path'])
+                asyncio.create_task(_xdg_open(path.parent if action == 'reveal' else path))
+            else:
+                await self._jobs.control(jid, action)
+            return web.json_response({'ok': True})
+        except ValueError as exc:
+            return web.json_response({'error': str(exc)}, status=409)
+
+    async def _api_clip_file(self, req):
+        path = self._clips.get(req.match_info['slug'])
+        if not path or not path.is_file():
+            raise web.HTTPNotFound()
+        if req.query.get('prepared') == '1':
+            cached = _discord_path(path)
+            if cached.is_file():
+                path = cached
+            elif not (path.suffix.lower() == '.mp4' and path.stat().st_size <= DISCORD_MAX_BYTES):
+                raise web.HTTPNotFound()
+        return web.json_response({'path': str(path.resolve()), 'uri': path.resolve().as_uri(),
+                                  'filename': path.name, 'size': path.stat().st_size,
+                                  'thumbnail': str(_thumb_path(path))}, headers={'Cache-Control': 'no-store'})
+
+    async def _api_queue_prepare(self, req):
+        slug = req.match_info['slug']
+        path = self._clips.get(slug)
+        if not path or not path.is_file():
+            raise web.HTTPNotFound()
+        job = await self._submit_prepare(slug, path)
+        return web.json_response({'ok': True, 'job_id': job['id']})
+
+    async def _submit_prepare(self, slug, path):
+        meta = await self._get_meta(slug, path)
+        # Explicit preparation is the only route that creates a Discord copy;
+        # dragging the ordinary card never submits a conversion.
+        revision = media_revision(path)
+        existing = next((job for job in reversed(self._jobs.jobs)
+                         if job['operation'] == 'prepare' and job['payload'].get('slug') == slug
+                         and job.get('source_revision') == revision
+                         and job['status'] not in {'failed', 'cancelled', 'interrupted'}
+                         and (job['status'] != 'completed' or Path(job['result_path']).is_file())), None)
+        if existing:
+            return existing
+        job = await self._jobs.submit('prepare', path.name, {'slug': slug},
+                                      source_revision=media_revision(path), duration=meta.get('duration', 0))
+        return job
+
+    async def _run_job(self, job):
+        from types import SimpleNamespace
+        payload = job['payload']
+        operation = job['operation']
+        if operation in {'trim', 'prepare'}:
+            path = self._clips.get(payload['slug'])
+            if not path or not path.is_file() or media_revision(path) != job['source_revision']:
+                raise ValueError('Source recording changed or is missing. Select the current clip again.')
+        if operation == 'trim':
+            req = SimpleNamespace(match_info={'slug': payload['slug']}, queue_job=job)
+            async def body(): return payload
+            req.json = body
+            response = await self._api_trim(req)
+            result = json.loads(response.text)
+            if not result.get('ok'):
+                raise ValueError(result.get('error', 'Trim failed'))
+            target = self._clips.get(result['slug']) or Path(payload['target'])
+            if payload.get('name'):
+                rename = SimpleNamespace(match_info={'slug': result['slug']})
+                async def name(): return {'name': payload['name']}
+                rename.json = name
+                renamed = json.loads((await self._api_rename(rename)).text)
+                if not renamed.get('ok'):
+                    raise ValueError('Trim was saved, but renaming failed: ' + renamed.get('error', 'Unknown error'))
+                if renamed.get('slug'):
+                    target = self._clips[renamed['slug']]
+            return target
+        if operation == 'export':
+            for slug, revision in payload.get('source_revisions', {}).items():
+                path = self._clips.get(slug)
+                if not path or not path.exists() or media_revision(path) != revision:
+                    raise ValueError('An export source changed or is missing')
+            req = SimpleNamespace(queue_job=job)
+            async def body(): return payload
+            req.json = body
+            response = await self._api_editor_export(req)
+            result = json.loads(response.text)
+            if not result.get('ok'):
+                raise ValueError(result.get('error') or '; '.join(result.get('errors', [])))
+            try:
+                result = await self._exports.wait()
+            except asyncio.CancelledError:
+                if self._exports._committed:
+                    result = await self._exports.wait()
+                else:
+                    await self._exports.cancel(job['id'])
+                    raise
+            if not result or result['type'] != 'export_done':
+                raise ValueError((result or {}).get('error', 'Export failed'))
+            return Path(result['path'])
+        if operation == 'prepare':
+            meta = await self._get_meta(payload['slug'], path)
+            await self._jobs.stage('encode', _discord_path(path).with_suffix('.mp4.tmp'))
+            result = await _make_discord_copy(path, meta.get('duration', 0), meta.get('audio_streams', 1),
+                                               process=self._jobs.process, progress=self._jobs.progress)
+            if not result:
+                raise ValueError('Could not prepare the sharing copy')
+            return result
+        raise ValueError('Unsupported processing operation')
 
     async def _api_clips(self, _: web.Request) -> web.Response:
         items = [
@@ -1882,13 +2018,19 @@ class ShareServer:
         return web.json_response({"ok": True})
 
     async def _api_trim(self, req: web.Request) -> web.Response:
+        body = await req.json()
+        if body.get('background') or isinstance(getattr(req, 'queue_job', None), dict):
+            return await self._trim_request(req, body)
+        async with self._proxy_lock:
+            return await self._trim_request(req, body)
+
+    async def _trim_request(self, req, body):
         slug = req.match_info["slug"]
         path = self._clips.get(slug)
         if not path or not path.exists():
             raise web.HTTPNotFound()
 
         source_stat = path.stat()
-        body  = await req.json()
         start = float(body.get("start", 0))
         end   = float(body.get("end",   0))
         # A copy keeps the original. Replacing it lost the rest of a session
@@ -1897,8 +2039,27 @@ class ShareServer:
         if end <= start:
             return web.json_response({"ok": False, "error": "end must be after start"})
 
+        job = getattr(req, 'queue_job', None)
+        job = job if isinstance(job, dict) else None
+        if body.get('background'):
+            target = _trimmed_copy_path(path) if as_copy else path
+            output = target
+            if body.get('name'):
+                stem = slugify_clip_name(str(body['name']))
+                if not stem:
+                    return web.json_response({'ok': False, 'error': 'That name will not work as a file'})
+                output = path.parent / f'{stem}{path.suffix}'
+                if output.exists() and (as_copy or output != path):
+                    return web.json_response({'ok': False, 'error': 'A clip with that name already exists'})
+            payload = {**body, 'background': False, 'slug': slug, 'target': str(target)}
+            queued = await self._jobs.submit('trim', path.name, payload, output_path=output,
+                                            source_revision=media_revision(path), duration=end - start)
+            return web.json_response({'ok': True, 'job_id': queued['id'], 'slug': target.stem, 'copy': as_copy})
+
         ext = path.suffix.lstrip(".") or "mp4"
         tmp = path.with_suffix(f".trimming.{ext}")
+        if job:
+            await self._jobs.stage("copy", tmp)
         faststart = ["-movflags", "+faststart"] if ext == "mp4" else []
         source_codec = (await self._get_meta(slug, path)).get("vcodec", "")
 
@@ -1932,6 +2093,9 @@ class ShareServer:
 
         async def _run(cmd: list[str], timeout: int) -> tuple[bool, str]:
             try:
+                if job:
+                    code, error = await self._jobs.process.run(cmd, end - start, self._jobs.progress)
+                    return code == 0, error
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,
                     stdout=asyncio.subprocess.DEVNULL,
@@ -1951,6 +2115,8 @@ class ShareServer:
             # the chosen in-point (#172).
             ok, err = await _run(_trim_cmd(None), 120)
             if ok:
+                if job:
+                    await self._jobs.stage('validating')
                 problem = await _trim_result_problem(tmp)
                 if problem:
                     log.info("Copy trim of %s %s, re-encoding", path.name, problem)
@@ -1959,13 +2125,19 @@ class ShareServer:
                 log.warning("Copy trim of %s failed, re-encoding: %s", path.name, err)
 
             if problem:
+                if job:
+                    await self._jobs.stage('encode', tmp)
                 candidates = await asyncio.to_thread(_trim_encoder_candidates, source_codec)
                 bitrate = await _video_bitrate(path)
                 for encoder in candidates:
+                    if job:
+                        await self._jobs.stage('encode', tmp)
                     ok, err = await _run(_trim_cmd(encoder, bitrate), 900)
                     if not ok:
                         log.info("Trim of %s with %s failed: %s", path.name, encoder, err)
                         continue
+                    if job:
+                        await self._jobs.stage('validating')
                     problem = await _trim_result_problem(tmp)
                     if problem:
                         err = f"the trimmed clip {problem}"
@@ -1992,8 +2164,12 @@ class ShareServer:
                 return web.json_response({"ok": False, "error": str(exc)})
 
             kept_keys = keystore.load_sidecar(slug)
+            if job:
+                await self._jobs.stage('saving')
             if as_copy:
-                target = _trimmed_copy_path(path)
+                target = Path(body['target']) if job else _trimmed_copy_path(path)
+                if target.exists():
+                    return web.json_response({'ok': False, 'error': 'Output already exists'})
                 tmp.replace(target)
                 if kept_keys is not None:
                     keystore.save_sidecar(target.stem, keystore.cut_intervals(kept_keys, start, end))
@@ -2571,7 +2747,7 @@ class ShareServer:
         if not isinstance(raw, dict):
             return web.json_response({"ok": False, "error": "expected a project"},
                                      status=400)
-        if self._exports.busy:
+        if self._exports.busy and not body.get('background'):
             return web.json_response(
                 {"ok": False, "error": "an export is already running"}, status=409)
 
@@ -2613,13 +2789,24 @@ class ShareServer:
                 {"ok": False, "error": "a file with that name already exists"},
                 status=400)
 
-        job_id = f"exp-{int(datetime.now().timestamp() * 1000)}"
+        job = getattr(req, 'queue_job', None)
+        job = job if isinstance(job, dict) else None
+        if body.get('background'):
+            payload = {**body, 'filename': name, 'background': False,
+                       'source_revisions': {slug: media_revision(source.path) for slug, source in sources.items()}}
+            queued = await self._jobs.submit('export', name, payload, output_path=final,
+                                            duration=project_extent(project))
+            return web.json_response({'ok': True, 'job_id': queued['id'], 'path': str(final)})
+
+        job_id = job["id"] if job else f"exp-{int(datetime.now().timestamp() * 1000)}"
         work = EXPORT_WORK_DIR / job_id
         work.mkdir(parents=True, exist_ok=True)
         for path, text in text_file_contents(project, work).items():
             path.write_text(text)
 
         tmp = dest / f".{final.stem}.export.mp4"
+        if job:
+            await self._jobs.stage('render', tmp)
         discord_optimized = bool(body.get("discord_optimized"))
         accent = str(body.get("accent", "")) or "#0099ff"
         key_burn = None
@@ -2658,7 +2845,8 @@ class ShareServer:
         try:
             self._exports.start(job_id, cmd, project_extent(project), tmp, final,
                                 on_done=on_done, cleanup=cleanup,
-                                max_bytes=DISCORD_MAX_BYTES if discord_optimized else None)
+                                max_bytes=DISCORD_MAX_BYTES if discord_optimized else None,
+                                **({'process': self._jobs.process} if job else {}))
         except ExportBusy:
             cleanup()
             return web.json_response(
@@ -2667,6 +2855,9 @@ class ShareServer:
         return web.json_response({"ok": True, "job_id": job_id, "path": str(final)})
 
     async def _api_editor_export_cancel(self, req: web.Request) -> web.Response:
+        if any(j['id'] == req.match_info['jid'] for j in self._jobs.jobs):
+            await self._jobs.control(req.match_info['jid'], 'cancel')
+            return web.json_response({'ok': True})
         if await self._exports.cancel(req.match_info["jid"]):
             return web.json_response({"ok": True})
         raise web.HTTPNotFound()

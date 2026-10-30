@@ -345,7 +345,29 @@
     "startOfSelection": "Anfang der Auswahl",
     "endOfSelection": "Ende der Auswahl",
     "trimAria": "{name} kürzen",
-    "heading": "Kürzen"
+    "heading": "Kürzen",
+    "seekTimeline": "Wiedergabe- und Schnittzeitleiste",
+    "showKeyframes": "Schlüsselbilder anzeigen und einrasten",
+    "snapKeyframes": "Auswahl an Schlüsselbildern ausrichten",
+    "keyframeAligned": "An Schlüsselbildern ausgerichtet",
+    "notKeyframeAligned": "Nicht an Schlüsselbildern ausgerichtet",
+    "analyzingKeyframes": "Schlüsselbilder werden analysiert…",
+    "keyframesUnavailable": "Schlüsselbildanalyse nicht verfügbar. Freies Schneiden ist weiterhin möglich.",
+    "noKeyframePair": "Kein Schlüsselbildpaar ergibt eine gültige Auswahl. Die Auswahl bleibt unverändert.",
+    "keyframeInformation": "Schlüsselbildinformationen",
+    "totalKeyframes": "Schlüsselbilder insgesamt",
+    "totalFrames": "Videobilder insgesamt",
+    "keyframeRatio": "Schlüsselbildanteil",
+    "averageInterval": "Durchschnittlicher Abstand",
+    "intervalRange": "Kürzester / längster Abstand",
+    "frameRate": "Bildrate",
+    "unknown": "Nicht verfügbar",
+    "estimated": "geschätzt",
+    "ratioValue": "1 Schlüsselbild je {frames} Bilder ({percent} %)",
+    "intervalSeconds": "Alle {seconds} Sekunden",
+    "fpsValue": "{average} FPS im Mittel · {nominal} nominal",
+    "keyframeHelp": "Die Anzeige von Schlüsselbildern aktiviert das Einrasten der Schnittmarken. Abstände beruhen auf echten Zeitstempeln; bei variabler Bildrate kann die Bildanzahl geschätzt sein. Die Ausrichtung begünstigt direktes Kopieren; Vice prüft den Schnitt und kodiert bei Bedarf neu.",
+    "timelineHint": "Klicken zum Spulen · Umschalt + Klick verschiebt die nächste Schnittmarke"
   },
   "images": {
     "heading": "Bilder",
@@ -647,7 +669,8 @@
     "exportSummary": "{seconds} s · {format} nach {path}",
     "exportFormatDiscord": "Für Discord optimiert (unter 20 MB)",
     "exportFormatDefault": "H.264 und AAC",
-    "exportFolderUnpicked": "einen Ordner deiner Wahl"
+    "exportFolderUnpicked": "einen Ordner deiner Wahl",
+    "recordingCompetition": "Eine Aufnahme läuft. Der Export nutzt dieselbe GPU und kann die Spielleistung beeinträchtigen."
   },
   "settings": {
     "title": "Einstellungen",
@@ -864,7 +887,9 @@
     "imageDirectoryHelp": "Hier werden Screenshots abgelegt. Sie liegen getrennt von den Clips, damit ein Bildbetrachter nicht einen Ordner voller Videodateien indiziert.",
     "soundScreenshot": "Screenshot",
     "shareDiscordFile": "Teilen kopiert eine Discord-Datei",
-    "shareDiscordFileHelp": "An: „Teilen“ kopiert den Clip selbst, verkleinert auf das kostenlose Upload-Limit von Discord und bereit zum Einfügen in eine Nachricht. Aus: Es kopiert den Link zum Teilen. Per Rechtsklick auf „Teilen“ bekommst du in beiden Fällen die andere Variante."
+    "shareDiscordFileHelp": "An: „Teilen“ kopiert den Clip selbst, verkleinert auf das kostenlose Upload-Limit von Discord und bereit zum Einfügen in eine Nachricht. Aus: Es kopiert den Link zum Teilen. Per Rechtsklick auf „Teilen“ bekommst du in beiden Fällen die andere Variante.",
+    "homeSidePanel": "Seitenbereich der Startseite",
+    "homeSidePanelHelp": "Wähle den Bereich neben den neuesten Clips. Änderungen gelten sofort."
   },
   "whatsNew": {
     "title": "Neu in Vice {version}",
@@ -892,5 +917,71 @@
         "body": "Vice gibt es jetzt auf Französisch und auf brasilianischem Portugiesisch. Die Sprache wählst du in den Einstellungen unter Darstellung."
       }
     }
+  },
+  "queue": {
+    "title": "Verarbeitungswarteschlange",
+    "loading": "Verlauf wird geladen…",
+    "emptyTitle": "Bereit für deine Clips",
+    "emptyHelp": "Schnitte, Exporte und vorbereitete Freigabedateien erscheinen hier.",
+    "backgroundHelp": "Die Verarbeitung läuft nach dem Schließen oder Minimieren der Oberfläche weiter. Das Beenden des Dienstes unterbricht aktive Aufgaben.",
+    "submitted": "Zur Warteschlange hinzugefügt",
+    "continueBackground": "Im Hintergrund fortsetzen",
+    "progress": "Verarbeitungsfortschritt",
+    "indeterminate": "In Arbeit…",
+    "controlFailed": "Aufgabe konnte nicht geändert werden",
+    "pauseUnavailable": "Pausieren ist während FFmpeg möglich. Vorbereitung und endgültiges Speichern können nicht pausiert werden.",
+    "elapsed": "Verstrichen: {time}",
+    "remaining": "Noch etwa {time}",
+    "speed": "{speed}× Geschwindigkeit",
+    "errorDetails": "Fehlerdetails",
+    "pause": "Pausieren",
+    "resume": "Fortsetzen",
+    "cancel": "Abbrechen",
+    "retry": "Erneut versuchen",
+    "remove": "Entfernen",
+    "open": "Video öffnen",
+    "reveal": "Im Ordner anzeigen",
+    "activeCount": {
+      "one": "{count} aktive Aufgabe",
+      "other": "{count} aktive Aufgaben"
+    },
+    "queuedCount": {
+      "one": "{count} wartende Aufgabe",
+      "other": "{count} wartende Aufgaben"
+    },
+    "operation": {
+      "trim": "Schnitt",
+      "export": "Editor-Export",
+      "prepare": "Freigabe vorbereiten"
+    },
+    "state": {
+      "queued": "Wartend",
+      "processing": "In Verarbeitung",
+      "paused": "Pausiert",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "interrupted": "Unterbrochen"
+    },
+    "stage": {
+      "queued": "Wartend",
+      "preparing": "Vorbereitung",
+      "copy": "Streams kopieren",
+      "encode": "Kodierung",
+      "render": "Rendern",
+      "saving": "Speichern",
+      "completed": "Abgeschlossen",
+      "failed": "Fehlgeschlagen",
+      "stopped": "Angehalten",
+      "validating": "Ausgabe prüfen"
+    },
+    "showMore": {
+      "one": "{count} weitere Aufgabe anzeigen",
+      "other": "{count} weitere Aufgaben anzeigen"
+    }
+  },
+  "drag": {
+    "unavailable": "Datei konnte nicht gezogen werden",
+    "fallback": "Nutze Datei kopieren oder das Freigabemenü. Manche isolierten Apps können keine lokalen Dateien annehmen."
   }
 }

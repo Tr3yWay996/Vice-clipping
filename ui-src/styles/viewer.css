@@ -1167,3 +1167,4 @@ kbd {
 .trim-foot { flex-wrap: wrap; }
 .trim-seek { position: absolute; inset: 0; }
 .trim-seek:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: var(--radius-element); }
+.trim-timeline-hint { margin: 0; font-size: 11px; color: var(--color-text-secondary); }

@@ -23,6 +23,7 @@ let ghost: HTMLElement | null = null;
  */
 export function startClipDrag(event: React.DragEvent, clip: Clip): void {
   beginDrag(event, clip.slug, clipTitle(clip), clip.thumb_url);
+  attachVideoFile(event, clip);
 }
 
 /**
@@ -37,6 +38,7 @@ export function startImageDrag(event: React.DragEvent, image: Image): void {
 function beginDrag(event: React.DragEvent, slug: string, label: string, thumb?: string): void {
   event.dataTransfer.effectAllowed = 'copy';
   event.dataTransfer.setData('text/plain', slug);
+  event.dataTransfer.setData('application/x-vice-clip', slug);
 
   clearGhost();
   const el = document.createElement('div');
@@ -68,6 +70,7 @@ function clearGhost() {
 export interface DropTarget {
   /** Spread onto the element that accepts the clip. */
   props: {
+    ref: (element: HTMLElement | null) => void;
     onDragOver: (e: React.DragEvent) => void;
     onDragLeave: () => void;
     onDrop: (e: React.DragEvent) => void;
@@ -91,6 +94,7 @@ export function usePlaylistDropTarget(
   const [over, setOver] = useState(false);
   const [caught, setCaught] = useState(false);
   const timer = useRef<number | undefined>(undefined);
+  const target = useRef<HTMLElement | null>(null);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -100,11 +104,9 @@ export function usePlaylistDropTarget(
     timer.current = window.setTimeout(() => setCaught(false), CAUGHT_MS);
   }, []);
 
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
+  const accept = useCallback(
+    (slug: string) => {
       setOver(false);
-      const slug = e.dataTransfer.getData('text/plain');
       if (!slug) return;
       if (playlist.clip_slugs?.includes(slug)) {
         celebrate();
@@ -123,17 +125,94 @@ export function usePlaylistDropTarget(
     [playlist.id, playlist.name, playlist.clip_slugs, celebrate, onDone],
   );
 
+  useEffect(() => {
+    const nativeDrop = (event: Event) => {
+      if (event.target instanceof Node && target.current?.contains(event.target)) {
+        const slug = (event as CustomEvent<{slug: string}>).detail?.slug;
+        if (slug) accept(slug);
+      }
+    };
+    const end = () => setOver(false);
+    window.addEventListener('vice-native-clip-drop', nativeDrop);
+    window.addEventListener('vice-native-drag-end', end);
+    return () => {
+      window.removeEventListener('vice-native-clip-drop', nativeDrop);
+      window.removeEventListener('vice-native-drag-end', end);
+    };
+  }, [accept]);
+
   return {
     over,
     caught,
     props: {
+      ref: element => {target.current = element;},
       onDragOver: e => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setOver(true);
       },
       onDragLeave: () => setOver(false),
-      onDrop,
+      onDrop: event => {
+        event.preventDefault();
+        accept(event.dataTransfer.getData('application/x-vice-clip') || event.dataTransfer.getData('text/plain'));
+      },
     },
   };
+}
+
+/** Shared with prepared-file drags from the share sheet. */
+export function fileUri(path: string): string {
+  return `file://${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+const files = new Map<string, {uri: string}>();
+type DragBridge = {
+  drag_clip?: (slug: string, prepared: boolean, appearance: {background: string; foreground: string}) => Promise<{ok: boolean; reason?: string}>;
+  file_drag_capabilities?: () => Promise<boolean>;
+};
+let checkedBridge: DragBridge | undefined;
+let nativeSupported = true;
+function nativeBridge(): DragBridge | undefined {
+  const bridge = (window as unknown as {pywebview?: {api?: DragBridge}}).pywebview?.api;
+  if (bridge !== checkedBridge) {
+    checkedBridge = bridge;
+    nativeSupported = true;
+    if (bridge?.file_drag_capabilities) void bridge.file_drag_capabilities()
+      .then(supported => {if (checkedBridge === bridge) nativeSupported = supported;})
+      .catch(() => {if (checkedBridge === bridge) nativeSupported = false;});
+  }
+  return nativeSupported ? bridge : undefined;
+}
+export function prepareClipDrag(clip: Clip): void {
+  nativeBridge();
+  const key = clip.video_url;
+  if (files.has(key)) return;
+  void api.originalFile(clip.slug).then(file => {
+    files.set(key, file);
+    if (files.size > 64) files.delete(files.keys().next().value!);
+  }).catch(() => {});
+}
+export function attachVideoFile(event: React.DragEvent, clip: Clip, preparedPath?: string): void {
+  const bridge = nativeBridge()?.drag_clip;
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData('application/x-vice-clip', clip.slug);
+  if (bridge) {
+    // Cancel Chromium's own drag before Qt starts the native file drag. The
+    // native QMimeData retains the internal identifier for playlist targets.
+    event.preventDefault();
+    const appearance = getComputedStyle(ghost ?? event.currentTarget);
+    void bridge(clip.slug, Boolean(preparedPath), {background: appearance.backgroundColor, foreground: appearance.color}).then(result => {
+      if (!result.ok && result.reason !== 'cancelled') window.dispatchEvent(new Event('vice-drag-unavailable'));
+    }).catch(() => window.dispatchEvent(new Event('vice-drag-unavailable'))).finally(() => {
+      clearGhost();
+      window.dispatchEvent(new Event('vice-native-drag-end'));
+    });
+    return;
+  }
+  const uri = preparedPath ? fileUri(preparedPath) : files.get(clip.video_url)?.uri;
+  if (uri) {
+    event.dataTransfer.setData('text/uri-list', `${uri}\r\n`);
+    event.dataTransfer.setData('text/plain', uri);
+  } else {
+    window.dispatchEvent(new Event('vice-drag-unavailable'));
+  }
 }

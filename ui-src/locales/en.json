@@ -384,7 +384,8 @@
     "ratioValue": "1 keyframe per {frames} frames ({percent}%)",
     "intervalSeconds": "Every {seconds} seconds",
     "fpsValue": "{average} FPS average · {nominal} nominal",
-    "keyframeHelp": "Showing keyframes also snaps trim handles. Intervals use actual timestamps; frame counts may be estimated for variable frame rates. Alignment improves the chance of stream copying; Vice still validates the cut and re-encodes when needed."
+    "keyframeHelp": "Showing keyframes also snaps trim handles. Intervals use actual timestamps; frame counts may be estimated for variable frame rates. Alignment improves the chance of stream copying; Vice still validates the cut and re-encodes when needed.",
+    "timelineHint": "Click to seek · Shift + click to adjust the nearest trim boundary"
   },
   "images": {
     "heading": "Images",
@@ -687,7 +688,8 @@
     "exportSummary": "{seconds}s · {format} into {path}",
     "exportFormatDiscord": "Discord-optimized (under 20 MB)",
     "exportFormatDefault": "H.264 and AAC",
-    "exportFolderUnpicked": "a folder you pick"
+    "exportFolderUnpicked": "a folder you pick",
+    "recordingCompetition": "Recording is active. Exporting shares the GPU with recording and may affect game performance."
   },
   "settings": {
     "title": "Settings",
@@ -934,7 +936,9 @@
     "imageDirectoryHelp": "Where screenshots are written. Kept apart from clips so an image viewer is not indexing a folder of video files.",
     "soundScreenshot": "Screenshot",
     "shareDiscordFile": "Share copies a Discord file",
-    "shareDiscordFileHelp": "On: the Share button copies the clip itself, shrunk to fit Discord's free upload limit, ready to paste into a message. Off: it copies the share link. Right-click Share for the other one either way."
+    "shareDiscordFileHelp": "On: the Share button copies the clip itself, shrunk to fit Discord's free upload limit, ready to paste into a message. Off: it copies the share link. Right-click Share for the other one either way.",
+    "homeSidePanel": "Homepage side panel",
+    "homeSidePanelHelp": "Choose the panel beside recent clips. Changes apply immediately."
   },
   "whatsNew": {
     "title": "What's new in Vice {version}",
@@ -986,5 +990,71 @@
         "body": "Vice is now available in French, German and Brazilian Portuguese. Pick a language in Settings, Appearance."
       }
     }
+  },
+  "queue": {
+    "title": "Processing Queue",
+    "loading": "Loading processing history…",
+    "emptyTitle": "Ready when you are",
+    "emptyHelp": "Trims, exports and prepared sharing files appear here.",
+    "backgroundHelp": "Processing continues when you minimize or close the interface. Quitting the daemon interrupts active work.",
+    "submitted": "Added to processing queue",
+    "continueBackground": "Continue in background",
+    "progress": "Processing progress",
+    "indeterminate": "Working…",
+    "controlFailed": "Could not update processing job",
+    "pauseUnavailable": "Pause is available while FFmpeg is running. Preparation and final file publication cannot be paused.",
+    "elapsed": "Elapsed {time}",
+    "remaining": "About {time} remaining",
+    "speed": "{speed}× speed",
+    "errorDetails": "Error details",
+    "pause": "Pause",
+    "resume": "Resume",
+    "cancel": "Cancel",
+    "retry": "Retry",
+    "remove": "Remove",
+    "open": "Open video",
+    "reveal": "Show in folder",
+    "activeCount": {
+      "one": "{count} active job",
+      "other": "{count} active jobs"
+    },
+    "queuedCount": {
+      "one": "{count} queued job",
+      "other": "{count} queued jobs"
+    },
+    "operation": {
+      "trim": "Trim",
+      "export": "Editor export",
+      "prepare": "Sharing preparation"
+    },
+    "state": {
+      "queued": "Queued",
+      "processing": "Processing",
+      "paused": "Paused",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "interrupted": "Interrupted"
+    },
+    "stage": {
+      "queued": "Waiting",
+      "preparing": "Preparing",
+      "copy": "Copying streams",
+      "encode": "Encoding",
+      "render": "Rendering",
+      "saving": "Saving",
+      "completed": "Completed",
+      "failed": "Failed",
+      "stopped": "Stopped",
+      "validating": "Validating output"
+    },
+    "showMore": {
+      "one": "Show {count} more job",
+      "other": "Show {count} more jobs"
+    }
+  },
+  "drag": {
+    "unavailable": "File drag unavailable",
+    "fallback": "Use Copy file or the Share menu. Some sandboxed apps cannot accept local files."
   }
 }

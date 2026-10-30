@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
 
-import {endClipDrag, startClipDrag} from '../lib/clipDrag';
+import {endClipDrag, startClipDrag, prepareClipDrag} from '../lib/clipDrag';
 import {formatBytes, formatDuration} from '../lib/format';
 import {clipTitle, type Clip} from '../lib/types';
 import {H264_SUPPORTED} from '../lib/env';
@@ -112,6 +112,8 @@ export function ClipCard({
       className="clip-card"
       data-broken={broken || undefined}
       draggable={draggable && !renaming}
+      onPointerEnter={() => prepareClipDrag(clip)}
+      onFocus={() => prepareClipDrag(clip)}
       onDragStart={e => startClipDrag(e, clip)}
       onDragEnd={endClipDrag}
       onContextMenu={e => {

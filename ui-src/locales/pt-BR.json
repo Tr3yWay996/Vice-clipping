@@ -320,7 +320,29 @@
     "startOfSelection": "Início da seleção",
     "endOfSelection": "Fim da seleção",
     "trimAria": "Recortar {name}",
-    "heading": "Recortar"
+    "heading": "Recortar",
+    "seekTimeline": "Linha do tempo de reprodução e corte",
+    "showKeyframes": "Mostrar quadros-chave e ajustar",
+    "snapKeyframes": "Alinhar seleção aos quadros-chave",
+    "keyframeAligned": "Alinhada aos quadros-chave",
+    "notKeyframeAligned": "Não alinhada aos quadros-chave",
+    "analyzingKeyframes": "Analisando quadros-chave…",
+    "keyframesUnavailable": "Análise de quadros-chave indisponível. O corte livre continua disponível.",
+    "noKeyframePair": "Nenhum par de quadros-chave permite uma seleção válida. A seleção não foi alterada.",
+    "keyframeInformation": "Informações dos quadros-chave",
+    "totalKeyframes": "Total de quadros-chave",
+    "totalFrames": "Total de quadros do vídeo",
+    "keyframeRatio": "Proporção de quadros-chave",
+    "averageInterval": "Intervalo médio",
+    "intervalRange": "Menor / maior intervalo",
+    "frameRate": "Taxa de quadros",
+    "unknown": "Indisponível",
+    "estimated": "estimativa",
+    "ratioValue": "1 quadro-chave a cada {frames} quadros ({percent}%)",
+    "intervalSeconds": "A cada {seconds} segundos",
+    "fpsValue": "{average} FPS em média · {nominal} nominais",
+    "keyframeHelp": "Mostrar quadros-chave também ativa o ajuste das alças. Os intervalos usam tempos reais; a contagem de quadros pode ser estimada em vídeos de taxa variável. O alinhamento favorece a cópia direta; o Vice ainda valida o corte e recodifica quando necessário.",
+    "timelineHint": "Clique para navegar · Shift + clique ajusta o limite mais próximo"
   },
   "images": {
     "heading": "Imagens",
@@ -613,7 +635,8 @@
     "audioMuted": "Silenciar",
     "audioPreviewFailed": "Não foi possível reproduzir esta faixa de áudio. Tente novamente ou consulte o arquivo de log.",
     "detachedTracksHelp": "Cada fonte da gravação tem sua própria faixa. Por padrão, somente a faixa 1 vem habilitada, de modo que uma faixa combinada não entre no mix duas vezes. Ative o som das fontes que quiser ouvir.",
-    "preparingMedia": "Preparando pré-visualização"
+    "preparingMedia": "Preparando pré-visualização",
+    "recordingCompetition": "Há uma gravação em andamento. A exportação usa a mesma GPU e pode afetar o desempenho do jogo."
   },
   "settings": {
     "title": "Configurações",
@@ -823,6 +846,74 @@
     "clearKey": "Limpar",
     "imageDirectory": "Pasta das imagens",
     "imageDirectoryHelp": "Onde as capturas de tela são salvas. Mantido à parte dos clipes para que o visualizador de imagens não indexe uma pasta de arquivosde vídeo.",
-    "soundScreenshot": "Captura de tela"
+    "soundScreenshot": "Captura de tela",
+    "homeSidePanel": "Painel lateral da página inicial",
+    "homeSidePanelHelp": "Escolha o painel ao lado dos clipes recentes. A alteração é imediata."
+  },
+  "queue": {
+    "title": "Fila de processamento",
+    "loading": "Carregando histórico…",
+    "emptyTitle": "Pronta para seus clipes",
+    "emptyHelp": "Cortes, exportações e arquivos preparados para compartilhar aparecem aqui.",
+    "backgroundHelp": "O processamento continua ao minimizar ou fechar a interface. Encerrar o serviço interrompe as tarefas ativas.",
+    "submitted": "Adicionado à fila de processamento",
+    "continueBackground": "Continuar em segundo plano",
+    "progress": "Progresso do processamento",
+    "indeterminate": "Processando…",
+    "controlFailed": "Não foi possível alterar a tarefa",
+    "pauseUnavailable": "A pausa está disponível durante a execução do FFmpeg. A preparação e a gravação final não podem ser pausadas.",
+    "elapsed": "Tempo decorrido: {time}",
+    "remaining": "Cerca de {time} restantes",
+    "speed": "Velocidade de {speed}×",
+    "errorDetails": "Detalhes do erro",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "cancel": "Cancelar",
+    "retry": "Tentar novamente",
+    "remove": "Remover",
+    "open": "Abrir vídeo",
+    "reveal": "Mostrar na pasta",
+    "activeCount": {
+      "one": "{count} tarefa ativa",
+      "other": "{count} tarefas ativas"
+    },
+    "queuedCount": {
+      "one": "{count} tarefa na fila",
+      "other": "{count} tarefas na fila"
+    },
+    "operation": {
+      "trim": "Corte",
+      "export": "Exportação do editor",
+      "prepare": "Preparação para compartilhar"
+    },
+    "state": {
+      "queued": "Na fila",
+      "processing": "Processando",
+      "paused": "Pausada",
+      "completed": "Concluída",
+      "failed": "Falhou",
+      "cancelled": "Cancelada",
+      "interrupted": "Interrompida"
+    },
+    "stage": {
+      "queued": "Aguardando",
+      "preparing": "Preparação",
+      "copy": "Copiando fluxos",
+      "encode": "Codificando",
+      "render": "Renderizando",
+      "saving": "Salvando",
+      "completed": "Concluída",
+      "failed": "Falhou",
+      "stopped": "Interrompido",
+      "validating": "Validando resultado"
+    },
+    "showMore": {
+      "one": "Mostrar mais {count} tarefa",
+      "other": "Mostrar mais {count} tarefas"
+    }
+  },
+  "drag": {
+    "unavailable": "Não foi possível arrastar o arquivo",
+    "fallback": "Use Copiar arquivo ou o menu Compartilhar. Alguns aplicativos isolados não aceitam arquivos locais."
   }
 }

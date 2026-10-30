@@ -1,4 +1,4 @@
-import {useEffect, useState, type RefObject} from 'react';
+import {useEffect, useState, useRef, useCallback, type RefObject} from 'react';
 
 import {H264_SUPPORTED, HEVC_SUPPORTED, nativeLog} from './env';
 import type {Clip} from './types';
@@ -23,16 +23,11 @@ export function playbackUrl(clip: Clip | null | undefined): string {
   return clipNeedsProxy(clip) ? `${clip.video_url}&proxy=1` : clip.video_url;
 }
 
-/** Frame-accurate enough for a scrub, and cheap on engines that offer it. */
+/** Exact seeking: fastSeek may silently choose a different keyframe. */
 export function seekTo(video: HTMLVideoElement | null, seconds: number): void {
   if (!video) return;
   const target = Math.max(0, Number(seconds) || 0);
-  try {
-    if (typeof video.fastSeek === 'function') video.fastSeek(target);
-    else video.currentTime = target;
-  } catch {
-    video.currentTime = target;
-  }
+  if (Math.abs(video.currentTime - target) > 0.000001) video.currentTime = target;
 }
 
 /** Play without treating an interrupted promise as an error worth reporting. */
@@ -116,4 +111,38 @@ export function useVideoFailure(
   }, [ref, present]);
 
   return failed;
+}
+
+/** Coalesce pointer-move seeks while keeping clicks and final commits exact. */
+export function useScrubSeek(ref: RefObject<HTMLVideoElement | null>, onPosition?: (seconds: number) => void) {
+  const frame = useRef<number | null>(null);
+  const pending = useRef(0);
+  const changed = useRef(onPosition);
+  changed.current = onPosition;
+  useEffect(() => () => {if (frame.current !== null) cancelAnimationFrame(frame.current);}, []);
+  const seek = useCallback((seconds: number, immediate = true) => {
+    pending.current = Math.max(0, seconds);
+    changed.current?.(pending.current);
+    const apply = () => {frame.current = null; seekTo(ref.current, pending.current);};
+    if (immediate) {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+      apply();
+    } else if (frame.current === null) frame.current = requestAnimationFrame(apply);
+  }, [ref]);
+  return {seek};
+}
+
+/** Shared Space/M behavior; each surface retains its own navigation shortcuts. */
+export function playbackShortcut(event: KeyboardEvent, toggle: () => void, mute: () => void): boolean {
+  if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return false;
+  const target = event.target instanceof HTMLElement ? event.target : null;
+  if (target?.closest('input, textarea, select') || target?.isContentEditable) return false;
+  if (event.code === 'Space' || event.key === ' ') {
+    if (target?.closest('button, a, [role="button"], [role="switch"]')) return false;
+    event.preventDefault();
+    if (!event.repeat) toggle();
+    return true;
+  }
+  if (event.key.toLowerCase() === 'm') {event.preventDefault(); mute(); return true;}
+  return false;
 }

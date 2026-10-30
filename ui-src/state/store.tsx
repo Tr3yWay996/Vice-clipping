@@ -22,6 +22,7 @@ import type {
   Image,
   Playlist,
   Status,
+  ProcessingJob,
   UpdateInfo,
   ViewName,
   WsMessage,
@@ -52,6 +53,8 @@ export type BannerId = 'recorder' | 'cpu' | 'codec-gpu' | 'codec-h264';
 
 interface State {
   ready: boolean;
+  jobs: ProcessingJob[];
+  jobsLoaded: boolean;
   loadError: string | null;
   config: Config | null;
   clips: Clip[];
@@ -96,6 +99,8 @@ const INITIAL_STATUS: Status = {
 
 const initialState: State = {
   ready: false,
+  jobs: [],
+  jobsLoaded: false,
   loadError: null,
   config: null,
   clips: [],
@@ -127,6 +132,7 @@ type Action =
     }
   | {type: 'statusSnapshot'; status: Status}
   | {type: 'statusStale'}
+  | {type: 'jobsSnapshot'; jobs: ProcessingJob[]}
   | {type: 'loadFailed'; error: string}
   | {type: 'ws'; msg: WsMessage}
   | {type: 'setView'; view: ViewName; playlistId?: string | null}
@@ -167,6 +173,9 @@ function reduce(state: State, action: Action): State {
         statusSynced: true,
         tunnelError: action.status.public_is_tunnel ? false : state.tunnelError,
       };
+
+    case 'jobsSnapshot':
+      return {...state, jobs: action.jobs, jobsLoaded: true};
 
     case 'statusStale':
       return {...state, statusSynced: false};
@@ -246,6 +255,8 @@ function reduce(state: State, action: Action): State {
 
 function reduceWs(state: State, msg: WsMessage): State {
   switch (msg.type) {
+    case 'jobs_changed':
+      return {...state, jobs: msg.jobs, jobsLoaded: true};
     case 'clip_saved': {
       const existing = state.clips.some(c => c.slug === msg.clip.slug);
       const clips = existing
@@ -524,6 +535,14 @@ export function StoreProvider({children}: {children: ReactNode}) {
     let cancelled = false;
     let request = 0;
     let statusEvents = 0;
+    let jobsRequest = 0;
+    const syncJobs = async () => {
+      const current = ++jobsRequest;
+      try {
+        const jobs = await api.jobs();
+        if (!cancelled && current === jobsRequest) dispatch({type: 'jobsSnapshot', jobs});
+      } catch (err) {console.debug('Refreshing processing queue failed', err);}
+    };
     const syncStatus = async () => {
       const current = ++request;
       const seen = statusEvents;
@@ -547,6 +566,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
     refreshStatus.current = syncStatus;
     const disconnect = connectWs(msg => {
       if (cancelled) return;
+      if (msg.type === 'jobs_changed') jobsRequest += 1;
       if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
       if (['status', 'tunnel_url', 'tunnel_error', 'session_start', 'session_stop'].includes(msg.type)) {
         statusEvents += 1;
@@ -566,16 +586,18 @@ export function StoreProvider({children}: {children: ReactNode}) {
     }, {
       // The socket is subscribed before this snapshot, closing the gap where
       // a tunnel event could have been missed between HTTP load and WS open.
-      onOpen: () => {void syncStatus();},
+      onOpen: () => {void syncStatus(); void syncJobs();},
       onClose: () => {
         request += 1;
+        jobsRequest += 1;
         dispatch({type: 'statusStale'});
       },
     });
     // Also load when the WebSocket cannot connect. Slow clip enumeration must
     // never hold this snapshot, or overwrite subsequent live status updates.
     void syncStatus();
-    const resume = () => {void syncStatus();};
+    void syncJobs();
+    const resume = () => {void syncStatus(); void syncJobs();};
     const visible = () => {if (document.visibilityState === 'visible') resume();};
     window.addEventListener('focus', resume);
     window.addEventListener('online', resume);
@@ -583,12 +605,20 @@ export function StoreProvider({children}: {children: ReactNode}) {
     return () => {
       cancelled = true;
       request += 1;
+      jobsRequest += 1;
       refreshStatus.current = async () => {};
       disconnect();
       window.removeEventListener('focus', resume);
       window.removeEventListener('online', resume);
       document.removeEventListener('visibilitychange', visible);
     };
+  }, []);
+
+  useEffect(() => {
+    const unavailable = () => dispatch({type: 'event', event: {kind: 'error',
+      title: t('drag.unavailable'), detail: t('drag.fallback'), tone: 'error', holdMs: 8000}});
+    window.addEventListener('vice-drag-unavailable', unavailable);
+    return () => window.removeEventListener('vice-drag-unavailable', unavailable);
   }, []);
 
   // Transient island events expire on their own.

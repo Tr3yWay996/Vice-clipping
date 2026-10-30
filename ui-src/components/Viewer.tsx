@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 
+import {VolumeControl, PlayGlyph, PauseGlyph, PlayPauseButton, PlaybackTime, VideoLoading, usePlaybackAudio} from './PlaybackControls';
 import {api} from '../lib/api';
 import {useEscape} from '../lib/escape';
 import {DEFAULT_MARK_COLOR, MARK_COLORS} from '../lib/palette';
@@ -10,6 +11,8 @@ import {
   playQuietly,
   playbackUrl,
   seekTo,
+  useScrubSeek,
+  playbackShortcut,
   useVideoFailure,
   videoFailureMessage,
 } from '../lib/playback';
@@ -54,26 +57,6 @@ export interface ViewerProps {
  * window you are watching in, not a recording setting, and the native window
  * cannot always write it, which is only ever a forgotten level (#174).
  */
-const VOLUME_KEY = 'vice-volume';
-const MUTED_KEY = 'vice-muted';
-
-export function storedVolume(): number {
-  try {
-    const raw = Number(localStorage.getItem(VOLUME_KEY));
-    return Number.isFinite(raw) && raw >= 0 && raw <= 1 ? raw : 1;
-  } catch {
-    return 1;
-  }
-}
-
-export function storedMuted(): boolean {
-  try {
-    return localStorage.getItem(MUTED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
 const KEYS_SHOWN_KEY = 'vice-viewer-keys';
 
 /** Whether a clip's saved keys are drawn over it. On until turned off. */
@@ -129,11 +112,11 @@ export function Viewer(props: ViewerProps) {
   );
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState(false);
-  const [volume, setVolume] = useState(storedVolume);
-  const [muted, setMuted] = useState(storedMuted);
+  const {volume, muted, setVolume: applyVolume, toggleMuted} = usePlaybackAudio(videoRef);
   const [expanded, setExpanded] = useState(false);
   const [idle, setIdle] = useState(false);
   const [grabbing, setGrabbing] = useState(false);
+  const {seek: scrubSeek} = useScrubSeek(videoRef);
   const failed = useVideoFailure(videoRef, mounted);
   const [keysShown, setKeysShown] = useState(storedKeysShown);
   const [keyIntervals, setKeyIntervals] = useState<KeyInterval[] | null>(null);
@@ -196,16 +179,6 @@ export function Viewer(props: ViewerProps) {
     video.removeAttribute('src');
     video.load();
   }, [open]);
-
-  // Applied on every render rather than only on change: attaching a new source
-  // resets the element's own volume, so a clip stepped to at 20% would come
-  // back at full blast.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.volume = volume;
-    video.muted = muted;
-  });
 
   // Expanding is a layout change inside the Vice window, not the Fullscreen
   // API. QtWebEngine ships with fullscreen support off, so requestFullscreen
@@ -292,28 +265,6 @@ export function Viewer(props: ViewerProps) {
     );
   }, [expanded]);
 
-  const applyVolume = useCallback((next: number) => {
-    // Rounded before it is stored: a pointer position divided by a track width
-    // is 0.39999999999999963, and that is what ends up in localStorage and in
-    // the element otherwise.
-    const level = round3(clamp01(next));
-    setVolume(level);
-    remember(VOLUME_KEY, String(level));
-    // Dragging the slider up off zero is an unmute; making the user press the
-    // speaker as well would be a second gesture for one intention.
-    if (level > 0) {
-      setMuted(false);
-      remember(MUTED_KEY, '0');
-    }
-  }, []);
-
-  const toggleMuted = useCallback(() => {
-    setMuted(prev => {
-      remember(MUTED_KEY, prev ? '0' : '1');
-      return !prev;
-    });
-  }, []);
-
   const saveFrame = useCallback(async () => {
     const video = videoRef.current;
     if (!clip || !video || grabbing) return;
@@ -391,13 +342,7 @@ export function Viewer(props: ViewerProps) {
       if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (target?.closest('input, textarea, select') || target?.isContentEditable) return;
-      if (e.code === 'Space' || e.key === ' ') {
-        // Let a focused control keep its native keyboard activation.
-        if (target?.closest('button, a, [role="button"], [role="switch"]')) return;
-        e.preventDefault();
-        if (!e.repeat) toggle();
-        return;
-      }
+      if (playbackShortcut(e, toggle, toggleMuted)) return;
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
         step(-1);
@@ -431,7 +376,7 @@ export function Viewer(props: ViewerProps) {
     const track = timelineRef.current;
     if (!track || !duration) return;
     const rect = track.getBoundingClientRect();
-    seekTo(videoRef.current, clamp01((clientX - rect.left) / rect.width) * duration);
+    scrubSeek(clamp01((clientX - rect.left) / rect.width) * duration, false);
   };
 
   const beginHighlightDrag = (event: React.PointerEvent, highlight: Highlight) => {
@@ -627,12 +572,7 @@ export function Viewer(props: ViewerProps) {
               {formatDuration(position.current, true)} / {formatDuration(duration, true)}
             </span>
 
-            {preparing ? (
-              <div className="video-overlay" onClick={e => e.stopPropagation()}>
-                <span className="video-spinner" aria-hidden="true" />
-                <p>{t('viewer.preparingPreview')}</p>
-              </div>
-            ) : null}
+            <VideoLoading preparing={preparing}/>
 
             {/* The modal's own timeline and the player bar are both scrolled
                 away while expanded, so the stage carries its own transport. */}
@@ -644,7 +584,7 @@ export function Viewer(props: ViewerProps) {
                 <span className="mono player-tc">{formatDuration(position.current, true)}</span>
                 <Scrubber
                   percent={percent}
-                  onSeek={ratio => seekTo(videoRef.current, ratio * duration)}
+                  onSeek={ratio => scrubSeek(ratio * duration, false)}
                 />
                 <span className="mono player-tc">{formatDuration(duration, true)}</span>
                 <VolumeControl
@@ -930,9 +870,7 @@ function PlayerBar({
           aria-label={t('viewer.prevClip')}>
           <StepGlyph dir="back" />
         </button>
-        <button type="button" className="player-main" onClick={onToggle} aria-label={paused ? t('viewer.play') : t('viewer.pause')}>
-          {paused ? <PlayGlyph /> : <PauseGlyph />}
-        </button>
+        <PlayPauseButton paused={paused} onToggle={onToggle}/>
         <button
           type="button"
           className="player-btn"
@@ -944,9 +882,7 @@ function PlayerBar({
       </div>
 
       <div className="player-audio">
-        <span className="mono player-tc">
-          {formatDuration(current, true)} / {formatDuration(duration, true)}
-        </span>
+        <PlaybackTime current={current} duration={duration}/>
         <VolumeControl
           volume={volume}
           muted={muted}
@@ -1025,46 +961,6 @@ function Scrubber({percent, onSeek}: {percent: number; onSeek: (ratio: number) =
  * not throw away the level the user chose. Storing zero is what made unmuting
  * after a restart jump back to full volume.
  */
-export function VolumeControl({
-  volume,
-  muted,
-  onChange,
-  onToggleMute,
-}: {
-  volume: number;
-  muted: boolean;
-  onChange: (next: number) => void;
-  onToggleMute: () => void;
-}) {
-  // Muted shows an empty track, so the control always agrees with what is
-  // coming out of the speakers rather than with the number behind it.
-  const shown = muted ? 0 : volume;
-
-  return (
-    <div className="player-volume">
-      <button
-        type="button"
-        className="player-btn"
-        onClick={onToggleMute}
-        aria-pressed={muted}
-        title={muted ? t('viewer.unmuteHint') : t('viewer.muteHint')}
-        aria-label={muted ? t('viewer.unmute') : t('viewer.mute')}>
-        <SpeakerGlyph level={shown} />
-      </button>
-      <input
-        type="range"
-        className="player-volume-range"
-        min={0}
-        max={1}
-        step={0.01}
-        value={shown}
-        aria-label={t('viewer.volume')}
-        style={{['--filled' as string]: `${shown * 100}%`}}
-        onChange={e => onChange(Number(e.target.value))}
-      />
-    </div>
-  );
-}
 
 function ColorPicker({
   at,
@@ -1144,16 +1040,6 @@ const Chevron = ({dir}: {dir: 'left' | 'right'}) => (
     <path d={dir === 'left' ? 'M15 6 9 12l6 6' : 'M9 6l6 6-6 6'} />
   </svg>
 );
-const PlayGlyph = () => (
-  <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor" aria-hidden="true">
-    <path d="M7 4l13 8-13 8z" />
-  </svg>
-);
-const PauseGlyph = () => (
-  <svg viewBox="0 0 24 24" width={16} height={16} fill="currentColor" aria-hidden="true">
-    <path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" />
-  </svg>
-);
 const StepGlyph = ({dir}: {dir: 'back' | 'forward'}) => (
   <svg viewBox="0 0 24 24" width={13} height={13} fill="currentColor" aria-hidden="true">
     <path d={dir === 'back' ? 'M6 4h2v16H6zM20 4 9.5 12 20 20z' : 'M18 4h-2v16h2zM4 4l10.5 8L4 20z'} />
@@ -1167,18 +1053,6 @@ const CameraGlyph = () => (
 );
 /* Three states rather than two: at a glance the difference between quiet and
    muted matters more than the exact number on the slider. */
-const SpeakerGlyph = ({level}: {level: number}) => (
-  <svg {...stroke} width={15} height={15} strokeWidth={2}>
-    <path d="M4 9.5h3L11 6v12L7 14.5H4z" />
-    {level <= 0 ? (
-      <path d="m15 9.5 4.5 5M19.5 9.5l-4.5 5" />
-    ) : level < 0.55 ? (
-      <path d="M14.8 9.8a3 3 0 0 1 0 4.4" />
-    ) : (
-      <path d="M14.8 9.8a3 3 0 0 1 0 4.4M17.3 7.6a6.5 6.5 0 0 1 0 8.8" />
-    )}
-  </svg>
-);
 const ShareGlyph = () => (
   <svg {...stroke} width={15} height={15} strokeWidth={2}>
     <circle cx="18" cy="5" r="3" />

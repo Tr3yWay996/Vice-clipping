@@ -1128,6 +1128,15 @@ export function Settings() {
 
         {/* ── Appearance ────────────────────────────────────────── */}
         <Card id="appearance" title={t('settings.secAppearance')} register={register('appearance')}>
+          <Row label={t('settings.homeSidePanel')} help={t('settings.homeSidePanelHelp')}>
+            <Select label={t('settings.homeSidePanel')} value={String(config?.ui?.home_side_panel ?? 'queue')}
+              onChange={value => {
+                update({homeSidePanel: value});
+                void saveConfig({ui: {home_side_panel: value}}).catch(error =>
+                  notify({kind: 'error', title: t('queue.controlFailed'), detail: error.message, tone: 'error', holdMs: 6000}));
+              }}
+              options={[["queue", t('queue.title')], ["images", t('images.heading')]]}/>
+          </Row>
           <Row label={t('settings.language')} help={t('settings.languageHelp')}>
             <Select
               label={t('settings.language')}

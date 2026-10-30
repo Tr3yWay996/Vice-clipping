@@ -1400,3 +1400,35 @@ kbd {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+.processing-queue { min-height: 0; display: flex; flex-direction: column; gap: var(--spacing-3); }
+.queue-background-help, .queue-timing { color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; }
+.queue-list { overflow: auto; min-height: 0; flex: 1; scrollbar-width: thin; }
+.queue-job { padding: var(--spacing-3); border-radius: var(--radius-element); background: var(--color-background-surface); margin-bottom: var(--spacing-3); min-width: 0; }
+.queue-job header { display: flex; align-items: center; gap: var(--spacing-2); }
+.queue-job header img { width: 48px; height: 32px; object-fit: cover; border-radius: 8px; }
+.queue-job header > div { min-width: 0; display: grid; gap: 4px; }
+.queue-job b { font-size: 12px; overflow-wrap: anywhere; }
+.queue-job header span { font-size: 11px; color: var(--color-text-secondary); }
+.queue-controls { display: flex; flex-wrap: wrap; gap: 4px; margin-top: var(--spacing-2); }
+.queue-controls .btn { font-size: 11px; padding: 6px 10px; }
+.queue-progress-wrap { display: flex; align-items: center; gap: 8px; margin-top: var(--spacing-3); font-size: 11px; }
+.queue-progress { flex: 1; position: relative; height: 12px; border-radius: var(--radius-full); overflow: hidden; background: var(--control); }
+.queue-liquid { height: 100%; position: relative; overflow: hidden; background: var(--color-accent); transition: width .25s linear; border-radius: inherit; }
+.queue-liquid::before, .queue-liquid::after { content: ''; position: absolute; inset: -10px -20px; background: repeating-radial-gradient(ellipse at 50% 0%, transparent 0 9px, #ffffff38 10px 15px, transparent 16px 24px); animation: queue-wave 3s linear infinite; }
+.queue-liquid::after { opacity: .4; animation-duration: 4.7s; animation-direction: reverse; }
+.queue-liquid[data-indeterminate] { animation: queue-indeterminate 2s ease-in-out infinite alternate; }
+.queue-progress-wrap[data-status="paused"] .queue-liquid { opacity: .5; animation-play-state: paused; }
+.queue-progress-wrap[data-status="paused"] .queue-liquid::before, .queue-progress-wrap[data-status="paused"] .queue-liquid::after { animation-play-state: paused; }
+.queue-progress-wrap[data-status="completed"] .queue-liquid::before, .queue-progress-wrap[data-status="completed"] .queue-liquid::after { animation: none; opacity: .15; }
+.queue-job[data-status="failed"], .queue-job[data-status="interrupted"] { border: 1px solid var(--color-error); }
+.queue-error { margin-top: 8px; font-size: 11px; }
+.queue-error pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.queue-empty { padding: var(--spacing-4); color: var(--color-text-secondary); font-size: 12px; }
+@keyframes queue-wave { to { transform: translateX(24px); } }
+@keyframes queue-indeterminate { to { transform: translateX(185%); } }
+@media (prefers-reduced-motion: reduce) { .queue-liquid, .queue-liquid::before, .queue-liquid::after { animation: none !important; transition: none; } }
+/* Keep the queue reachable in a compact window instead of hiding the Images
+   panel's replacement. Wide windows retain the original two-column layout. */
+.processing-queue { max-height: 65vh; padding: var(--spacing-4); border-radius: var(--radius-xl); background: var(--raised); margin-top: var(--spacing-4); }
+.frame-content[data-home-wide] .processing-queue { max-height: none; margin-top: 0; }
