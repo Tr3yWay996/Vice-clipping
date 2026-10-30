@@ -281,7 +281,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(project),
       });
-      if(!response.ok) throw new Error('Editor autosave rejected');
+      if (!response.ok) {
+        console.debug('Autosaving the editor project failed', response.status);
+        dirty = true;
+        return;
+      }
       serverItemIds = savedIds;
     } catch (err) {
       console.debug('Autosaving the editor project failed', err);

@@ -90,6 +90,13 @@ describe('editor shared transport and non-ripple keyboard trimming',()=>{
 });
 
 describe('recoverable source references with unsaved editor changes',()=>{
+ it('keeps rejected autosaves dirty so a later save can retry',async()=>{
+  key('i');const expected=JSON.stringify(engine.project());
+  vi.mocked(fetch).mockResolvedValue({ok:false,status:503} as Response);
+  await engine.saveNow();expect(engine.isDirty()).toBe(true);expect(JSON.stringify(engine.project())).toBe(expected);
+  vi.mocked(fetch).mockResolvedValue({ok:true} as Response);
+  await engine.saveNow();expect(engine.isDirty()).toBe(false);expect(JSON.stringify(engine.project())).toBe(expected);
+ });
  it('merges trash/restore identities through current edits and undo history',async()=>{
   key('i');expect(engine.isDirty()).toBe(true);
   const remote=fixture();remote.items.forEach(item=>{item.clipId='trash:entry';item.sourceName='Original match.mp4'});
