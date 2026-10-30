@@ -385,7 +385,9 @@
     "intervalSeconds": "Every {seconds} seconds",
     "fpsValue": "{average} FPS average · {nominal} nominal",
     "keyframeHelp": "Showing keyframes also snaps trim handles. Intervals use actual timestamps; frame counts may be estimated for variable frame rates. Alignment improves the chance of stream copying; Vice still validates the cut and re-encodes when needed.",
-    "timelineHint": "Click to seek · Shift + click to adjust the nearest trim boundary"
+    "timelineHint": "Click or drag to seek · Shift + click or drag a handle to edit boundaries without moving playback",
+    "shortcutHelp": "I: set IN · O: set OUT at the current playback position. Boundary edits and snapping keep the playhead and playback state unchanged. Preview starts at IN and loops the selection.",
+    "invalidBoundary": "Keep IN before OUT and leave at least {duration} selected."
   },
   "images": {
     "heading": "Images",
@@ -689,7 +691,9 @@
     "exportFormatDiscord": "Discord-optimized (under 20 MB)",
     "exportFormatDefault": "H.264 and AAC",
     "exportFolderUnpicked": "a folder you pick",
-    "recordingCompetition": "Recording is active. Exporting shares the GPU with recording and may affect game performance."
+    "recordingCompetition": "Recording is active. Exporting shares the GPU with recording and may affect game performance.",
+    "invalidTrimContext": "Select a video and place the playhead at a valid cut inside it. Independently edited detached audio must be trimmed separately.",
+    "shortcutHelp": "Select a video, then press I/O to trim its IN/OUT at the playhead. Matching detached audio follows. No ripple edits; undo/redo restores the whole edit."
   },
   "settings": {
     "title": "Settings",
@@ -938,7 +942,11 @@
     "shareDiscordFile": "Share copies a Discord file",
     "shareDiscordFileHelp": "On: the Share button copies the clip itself, shrunk to fit Discord's free upload limit, ready to paste into a message. Off: it copies the share link. Right-click Share for the other one either way.",
     "homeSidePanel": "Homepage side panel",
-    "homeSidePanelHelp": "Choose the panel beside recent clips. Changes apply immediately."
+    "homeSidePanelHelp": "Choose the panel beside recent clips. Changes apply immediately.",
+    "arrowKeyBehavior": "Arrow key behavior",
+    "arrowKeyBehaviorHelp": "In the clip viewer, arrows seek by 1 second (0.1 with Shift) and change volume by 5%. The legacy option switches clips instead.",
+    "arrowPlayback": "Playback navigation",
+    "arrowClips": "Clip navigation (legacy)"
   },
   "whatsNew": {
     "title": "What's new in Vice {version}",
@@ -1056,5 +1064,9 @@
   "drag": {
     "unavailable": "File drag unavailable",
     "fallback": "Use Copy file or the Share menu. Some sandboxed apps cannot accept local files."
+  },
+  "playback": {
+    "shortcuts": "Keyboard shortcuts",
+    "shortcutHelp": "Space: play/pause · ←/→: seek 1 s · Shift + ←/→: seek 0.1 s · ↑/↓: volume ±5% · M: mute · Home/End: beginning/end. Text fields and native controls keep their own keys."
   }
 }

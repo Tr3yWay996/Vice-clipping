@@ -367,7 +367,14 @@
     "intervalSeconds": "Alle {seconds} Sekunden",
     "fpsValue": "{average} FPS im Mittel · {nominal} nominal",
     "keyframeHelp": "Die Anzeige von Schlüsselbildern aktiviert das Einrasten der Schnittmarken. Abstände beruhen auf echten Zeitstempeln; bei variabler Bildrate kann die Bildanzahl geschätzt sein. Die Ausrichtung begünstigt direktes Kopieren; Vice prüft den Schnitt und kodiert bei Bedarf neu.",
-    "timelineHint": "Klicken zum Spulen · Umschalt + Klick verschiebt die nächste Schnittmarke"
+    "timelineHint": "Klicken oder ziehen zum Spulen · Umschalt + Klick oder einen Griff ziehen, um Grenzen ohne Verschieben der Wiedergabe zu ändern",
+    "shortcutHelp": "I: Anfang setzen · O: Ende an der Wiedergabeposition setzen. Grenzen und Einrasten verändern weder die Wiedergabeposition noch den Wiedergabestatus. Die Vorschau beginnt am Anfang und wiederholt die Auswahl.",
+    "invalidBoundary": "Der Anfang muss vor dem Ende liegen; mindestens {duration} müssen ausgewählt sein.",
+    "saveCopy": "Als neuen Clip speichern",
+    "savedCopy": "Neuer Clip gespeichert",
+    "replaceOriginal": "Original ersetzen",
+    "replaceConfirm": "Ersetzen bestätigen",
+    "replaceWarning": "Alles außerhalb der Auswahl wird aus dem Original entfernt."
   },
   "images": {
     "heading": "Bilder",
@@ -670,7 +677,9 @@
     "exportFormatDiscord": "Für Discord optimiert (unter 20 MB)",
     "exportFormatDefault": "H.264 und AAC",
     "exportFolderUnpicked": "einen Ordner deiner Wahl",
-    "recordingCompetition": "Eine Aufnahme läuft. Der Export nutzt dieselbe GPU und kann die Spielleistung beeinträchtigen."
+    "recordingCompetition": "Eine Aufnahme läuft. Der Export nutzt dieselbe GPU und kann die Spielleistung beeinträchtigen.",
+    "invalidTrimContext": "Wähle ein Video und setze die Wiedergabeposition auf einen gültigen Schnitt innerhalb des Clips. Separat bearbeiteter, abgetrennter Ton muss einzeln geschnitten werden.",
+    "shortcutHelp": "Video auswählen und mit I/O Anfang oder Ende an der Wiedergabeposition setzen. Passender abgetrennter Ton folgt dem Schnitt. Andere Clips bleiben an ihrer Position; Rückgängig/Wiederholen stellt die gesamte Änderung wieder her."
   },
   "settings": {
     "title": "Einstellungen",
@@ -889,7 +898,11 @@
     "shareDiscordFile": "Teilen kopiert eine Discord-Datei",
     "shareDiscordFileHelp": "An: „Teilen“ kopiert den Clip selbst, verkleinert auf das kostenlose Upload-Limit von Discord und bereit zum Einfügen in eine Nachricht. Aus: Es kopiert den Link zum Teilen. Per Rechtsklick auf „Teilen“ bekommst du in beiden Fällen die andere Variante.",
     "homeSidePanel": "Seitenbereich der Startseite",
-    "homeSidePanelHelp": "Wähle den Bereich neben den neuesten Clips. Änderungen gelten sofort."
+    "homeSidePanelHelp": "Wähle den Bereich neben den neuesten Clips. Änderungen gelten sofort.",
+    "arrowKeyBehavior": "Verhalten der Pfeiltasten",
+    "arrowKeyBehaviorHelp": "Im Clip-Player springen die Pfeiltasten um 1 Sekunde (0,1 mit Umschalt) und ändern die Lautstärke um 5 %. Im bisherigen Modus wechseln sie den Clip.",
+    "arrowPlayback": "In der Wiedergabe navigieren",
+    "arrowClips": "Clips wechseln (bisheriges Verhalten)"
   },
   "whatsNew": {
     "title": "Neu in Vice {version}",
@@ -983,5 +996,9 @@
   "drag": {
     "unavailable": "Datei konnte nicht gezogen werden",
     "fallback": "Nutze Datei kopieren oder das Freigabemenü. Manche isolierten Apps können keine lokalen Dateien annehmen."
+  },
+  "playback": {
+    "shortcuts": "Tastenkürzel",
+    "shortcutHelp": "Leertaste: Wiedergabe/Pause · ←/→: 1 s springen · Umschalt + ←/→: 0,1 s · ↑/↓: Lautstärke ±5 % · M: stummschalten · Pos1/Ende: Anfang/Ende. Textfelder und native Bedienelemente behalten ihre eigenen Tasten."
   }
 }

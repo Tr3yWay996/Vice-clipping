@@ -2,6 +2,7 @@ import {useEffect, useMemo, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
 import {useEscape} from '../lib/escape';
+import {usePlaybackShortcuts} from '../lib/playbackShortcuts';
 import {formatDuration, formatNumber} from '../lib/format';
 import {
   clipNeedsProxy,
@@ -20,6 +21,7 @@ import {t} from '../lib/i18n';
 import {VolumeControl, PlayPauseButton, PlaybackTime, VideoLoading, usePlaybackAudio} from './PlaybackControls';
 import {
   MIN_SELECTION,
+  boundaryAtPlayhead,
   lowerBound,
   moveBoundary,
   nearestBoundary,
@@ -58,6 +60,7 @@ export function TrimModal({
   onOpenExternally: (clip: Clip) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const shortcutRoot = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(true);
   const {volume, muted, setVolume, toggleMuted} = usePlaybackAudio(videoRef);
@@ -184,12 +187,14 @@ export function TrimModal({
     [showKeyframes, keyframes, total, timelineWidth],
   );
 
-  if (!clip) return null;
-
   const stopPreview = () => {
     setPreviewing(false);
     previewingRef.current = false;
     videoRef.current?.pause();
+  };
+  const leavePreview = () => {
+    previewingRef.current = false;
+    setPreviewing(false);
   };
 
   const togglePreview = () => {
@@ -222,8 +227,8 @@ export function TrimModal({
   };
 
   const seek = (at: number, immediate = true) => {
+    leavePreview();
     const next = Math.max(0, Math.min(total, at));
-    // fastSeek may land on a different keyframe: boundaries require an exact seek.
     scrubSeek(next, immediate);
   };
 
@@ -234,7 +239,7 @@ export function TrimModal({
     else video.pause();
   };
 
-  const updateBoundary = (handle: Boundary, at: number, immediate = true) => {
+  const updateBoundary = (handle: Boundary, at: number) => {
     const next = moveBoundary(
       selectionRef.current,
       handle,
@@ -245,7 +250,17 @@ export function TrimModal({
     selectionRef.current = next;
     setSelection(next);
     setSnapMessage(null);
-    seek(next[handle], immediate);
+    leavePreview();
+  };
+
+  const setBoundary = (handle: Boundary) => {
+    const next = boundaryAtPlayhead(selectionRef.current, handle, videoRef.current?.currentTime ?? 0,
+      total, showKeyframes ? keyframes?.timestamps : undefined);
+    if (!next) {setSnapMessage(t('trim.invalidBoundary', {duration:formatDuration(Math.min(MIN_SELECTION, total), true)})); return;}
+    leavePreview();
+    selectionRef.current = next;
+    setSelection(next);
+    setSnapMessage(null);
   };
 
   const timeAt = (clientX: number) => {
@@ -257,7 +272,7 @@ export function TrimModal({
     if (event.button !== 0 || !total || saving) return;
     event.preventDefault();
     event.stopPropagation();
-    stopPreview();
+    leavePreview();
     gesture.current = {
       pointer: event.pointerId,
       x: event.clientX,
@@ -273,7 +288,7 @@ export function TrimModal({
     const current = gesture.current;
     if (!current || current.pointer !== event.pointerId) return;
     current.moved ||= Math.hypot(event.clientX - current.x, event.clientY - current.y) >= 4;
-    if (current.handle) updateBoundary(current.handle, timeAt(event.clientX), false);
+    if (current.handle) updateBoundary(current.handle, timeAt(event.clientX));
     else if (current.moved) seek(timeAt(event.clientX), false);
   };
 
@@ -300,7 +315,7 @@ export function TrimModal({
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    stopPreview();
+    leavePreview();
     const current = selectionRef.current[handle];
     const direction = event.key === 'ArrowLeft' ? -1 : 1;
     let at =
@@ -308,7 +323,7 @@ export function TrimModal({
         ? 0
         : event.key === 'End'
           ? total
-          : current + direction * (event.shiftKey ? 1 : 0.1);
+          : current + direction * (event.shiftKey ? 0.1 : 1);
     if (showKeyframes && keyframes && event.key.startsWith('Arrow')) {
       const keys = keyframes.timestamps;
       const index = lowerBound(keys, current);
@@ -327,14 +342,14 @@ export function TrimModal({
       setSnapMessage(t('trim.noKeyframePair'));
       return;
     }
-    stopPreview();
+    leavePreview();
     selectionRef.current = next;
     setSelection(next);
     setSnapMessage(null);
-    seek(next.start);
   };
 
   const save = async (copy: boolean) => {
+    if (!clip) return;
     if (previewing) stopPreview();
     setSaving(true);
     setError(null);
@@ -363,6 +378,13 @@ export function TrimModal({
     }
   };
 
+  usePlaybackShortcuts(clip !== null && !saving, shortcutRoot, 30, event => playbackShortcut(event, {
+    toggle: togglePlayback, mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
+    duration: () => total, seek, volume: () => volume, setVolume, boundary: setBoundary,
+  }));
+
+  if (!clip) return null;
+
   const pct = (seconds: number) => (total ? (seconds / total) * 100 : 0);
   const startPct = pct(selection.start);
   const endPct = pct(selection.end);
@@ -371,7 +393,7 @@ export function TrimModal({
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div
         className="modal trim-modal"
-        onKeyDown={event => {playbackShortcut(event.nativeEvent, togglePlayback, toggleMuted);}}
+        ref={shortcutRoot}
         role="dialog"
         aria-modal="true"
         aria-label={t('trim.trimAria', {name: clipTitle(clip)})}>
@@ -411,7 +433,7 @@ export function TrimModal({
         </div>
 
         <div className="modal-body">
-          <div className="trim-stage">
+          <div className="trim-stage" onClick={togglePlayback}>
             <video
               ref={videoRef}
               className="trim-video"
@@ -503,21 +525,9 @@ export function TrimModal({
               aria-disabled={!total || saving}
               onKeyDown={(event) => {
                 if (event.target !== event.currentTarget || saving) return;
-                if (event.key === ' ' || event.key === 'Enter') {
+                if (event.key === 'Enter') {
                   event.preventDefault();
                   togglePlayback();
-                }
-                if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-                  event.preventDefault();
-                  stopPreview();
-                  seek(
-                    event.key === 'Home'
-                      ? 0
-                      : event.key === 'End'
-                        ? total
-                        : playhead +
-                          (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 5 : 0.1),
-                  );
                 }
               }}
             />
@@ -572,9 +582,13 @@ export function TrimModal({
           </div>
 
           <p className="trim-timeline-hint">{t('trim.timelineHint')}</p>
+          <details className="trim-keyframe-info playback-shortcuts">
+            <summary>{t('playback.shortcuts')}</summary>
+            <p>{t('playback.shortcutHelp')}</p><p>{t('trim.shortcutHelp')}</p>
+          </details>
           <div className="trim-tc mono">
-            <span>start {timecode(selection.start)}</span>
-            <span>end {timecode(selection.end)}</span>
+            <span>{t('trim.in')} {timecode(selection.start)}</span>
+            <span>{t('trim.out')} {timecode(selection.end)}</span>
           </div>
           <div className="trim-keyframe-actions">
             <label className="trim-keyframe-toggle">

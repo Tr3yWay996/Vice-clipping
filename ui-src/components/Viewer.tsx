@@ -2,6 +2,8 @@ import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {VolumeControl, PlayGlyph, PauseGlyph, PlayPauseButton, PlaybackTime, VideoLoading, usePlaybackAudio} from './PlaybackControls';
 import {api} from '../lib/api';
+import {useStore} from '../state/store';
+import {usePlaybackShortcuts} from '../lib/playbackShortcuts';
 import {useEscape} from '../lib/escape';
 import {DEFAULT_MARK_COLOR, MARK_COLORS} from '../lib/palette';
 import {useExitTransition} from '../lib/exit';
@@ -101,6 +103,8 @@ export function Viewer(props: ViewerProps) {
   const clip = props.clip ?? lastClip.current;
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const shortcutRoot = useRef<HTMLDivElement>(null);
+  const {state} = useStore();
   const timelineRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({current: 0, duration: 0});
@@ -336,20 +340,15 @@ export function Viewer(props: ViewerProps) {
     else video.pause();
   }, []);
 
-  useEffect(() => {
-    if (!open || closing || trimOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+  usePlaybackShortcuts(open && !closing && !trimOpen, shortcutRoot, 10, e => {
+      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return false;
       const target = e.target instanceof HTMLElement ? e.target : null;
-      if (target?.closest('input, textarea, select') || target?.isContentEditable) return;
-      if (playbackShortcut(e, toggle, toggleMuted)) return;
-      if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        step(-1);
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        step(1);
-      } else if (e.key === 'h' || e.key === 'H') {
+      if (target?.closest('input, textarea, select') || target?.isContentEditable) return false;
+      if (playbackShortcut(e, {toggle, mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
+        duration: () => position.duration, seek: at => scrubSeek(at), volume: () => volume,
+        setVolume: applyVolume, arrowMode: state.config?.ui?.arrow_key_behavior === 'clips' ? 'clips' : 'playback',
+        stepClip: step})) return true;
+      if (e.key === 'h' || e.key === 'H') {
         e.preventDefault();
         void addHighlight();
       } else if (e.key === 'f' || e.key === 'F') {
@@ -358,14 +357,9 @@ export function Viewer(props: ViewerProps) {
       } else if (e.key === 's' || e.key === 'S') {
         e.preventDefault();
         void saveFrame();
-      } else if (e.key === 'm' || e.key === 'M') {
-        e.preventDefault();
-        toggleMuted();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, closing, trimOpen, step, addHighlight, toggleExpanded, saveFrame, toggleMuted, toggle]);
+      } else return false;
+      return true;
+  });
 
   if (!mounted || !clip) return null;
 
@@ -458,6 +452,7 @@ export function Viewer(props: ViewerProps) {
       <div className="viewer-stack">
         <div
           className="modal viewer"
+          ref={shortcutRoot}
           data-closing={closing || undefined}
           role="dialog"
           aria-modal="true"
