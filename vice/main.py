@@ -92,26 +92,9 @@ _DEFAULT_GAMES: list[dict] = _load_default_games()
 
 
 def _best_game_match(entries, haystacks) -> Optional[str]:
-    """Name of the entry whose longest needle matches, or None.
+    from .games import best_game_match
+    return best_game_match(entries, haystacks)
 
-    Needles are substrings, so a short one swallows a longer one that is more
-    specific: "hades" matches Hades II's "hades2.exe", and a generic
-    "client-win64-shipping.exe" matches every Unreal game that ships under
-    that name. Taking the longest match rather than the first in list order
-    means the specific entry wins wherever the two overlap, and it makes a
-    Steam id safe to use even when a longer id starts with it
-    (steam_app_400 vs Garry's Mod's steam_app_4000). Equal lengths keep list
-    order, so nothing else moves.
-    """
-    best_name: Optional[str] = None
-    best_len = 0
-    for name, matches in entries:
-        for needle in matches or []:
-            n = (needle or "").lower()
-            # Length first: it is cheap and skips most substring scans.
-            if len(n) > best_len and any(n in h for h in haystacks):
-                best_name, best_len = name, len(n)
-    return best_name
 
 PID_FILE    = Path("/tmp/vice/vice.pid")
 SOCKET_FILE = Path("/tmp/vice/vice.sock")
@@ -155,6 +138,9 @@ WINDOW_CAPTURE_INTERVAL = 5.0
 class ViceDaemon:
     def __init__(self) -> None:
         self.cfg      = load_config()
+        from .games import GameLibrary
+        self.games = GameLibrary()
+        self._game_task = None
         self.recorder = create_recorder(self.cfg)
         self.hotkeys  = HotkeyListener()
         self.share:   Optional[ShareServer] = None
@@ -196,6 +182,7 @@ class ViceDaemon:
         # Game detected while the most recent clip was being saved, consumed
         # by _on_clip_saved to file the clip into its auto playlist.
         self._last_clip_game: Optional[str] = None
+        self._last_clip_game_id: Optional[str] = None
         # How many windows the last visible-window scan could see.
         self._last_scan_candidates: int = 0
         # Monitor the pointer is on, when follow-the-pointer capture is on.
@@ -238,7 +225,7 @@ class ViceDaemon:
 
         # Share server (web UI + REST API + WebSocket)
         if self.cfg.sharing.enabled:
-            self.share = ShareServer(self.cfg)
+            self.share = ShareServer(self.cfg, games=self.games)
             self.share.trigger_clip_cb = self._handle_clip_hotkey
             self.share.check_update_cb = lambda: self.run_update_check(force=True)
             self.share.get_status_cb   = self._get_status
@@ -400,6 +387,7 @@ class ViceDaemon:
         if self.cfg.discord.enabled:
             self._discord_task = asyncio.create_task(self._discord_presence_loop())
 
+        self._game_task = asyncio.create_task(self._game_observation_loop())
         self._watchdog_task = asyncio.create_task(self._recorder_watchdog_loop())
         self._upgrade_task = asyncio.create_task(self._upgrade_watch_loop())
         self._sync_follow_mouse_task()
@@ -462,7 +450,7 @@ class ViceDaemon:
             # Session clips are added to the share server inside _stop_session;
             # only add here for regular replay-buffer clips (not sessions).
             if not path.name.startswith("Vice_Session_"):
-                url = self.share.add_clip(path, game=self._last_clip_game)
+                url = self.share.add_clip(path, game=self._last_clip_game, game_id=getattr(self, '_last_clip_game_id', None))
                 self._last_clip_game = None
                 click.echo(f"[Vice] Share URL:  {url}\n")
                 if self.key_ring is not None and self.cfg.overlay.keys_in_clips:
@@ -1029,7 +1017,14 @@ class ViceDaemon:
         icon = None
         if self.cfg.discord.game_icons:
             from .game_icons import discord_icon_url
-            icon = discord_icon_url(game)
+            registry = getattr(self, 'games', None)
+            if registry:
+                from .game_icons import ArtworkStore
+                identity = registry.get(getattr(self, '_discord_current_game_id', None)) or registry.by_name(game)
+                asset = (identity or {}).get('artwork_override') or (identity or {}).get('automatic_artwork')
+                icon = ArtworkStore(registry.path.parent/'game-artwork').remote_url(asset) if asset else None
+            else:
+                icon = discord_icon_url(game)
         if icon:
             assets = {
                 "large_image": icon,
@@ -1101,6 +1096,7 @@ class ViceDaemon:
                     connected_now = True
                     self._discord_no_socket_logged = False
                 try:
+                    previous_game_id = getattr(self, '_discord_current_game_id', None)
                     win = get_active_window()
                     matched = self._match_game(win) if win else None
                     if matched is not None:
@@ -1109,15 +1105,18 @@ class ViceDaemon:
                         matched = await self._discord_unfocused_game()
                     if matched is None:
                         self._discord_current_game = None
+                        self._discord_current_game_id = None
                         self._discord_current_pid = 0
                         self._discord_game_comm = ""
                         if connected_now or self._discord_last_activity is not None:
                             if await self._discord_rpc.set_activity(None):
                                 self._discord_last_activity = None
                     else:
-                        if matched != self._discord_current_game:
+                        current_game_id = getattr(self, '_discord_current_game_id', None)
+                        if matched != self._discord_current_game or previous_game_id != current_game_id:
                             self._discord_current_game = matched
-                            self._discord_started_at = time.time()
+                            if not previous_game_id or previous_game_id != current_game_id:
+                                self._discord_started_at = time.time()
                         activity = self._discord_activity(matched)
                         if connected_now or activity != self._discord_last_activity:
                             if await self._discord_rpc.set_activity(activity):
@@ -1138,6 +1137,8 @@ class ViceDaemon:
             return
         comm = _read_proc_comm(pid)
         if comm:
+            identity = self._resolve_game(win)
+            self._discord_current_game_id = identity['id'] if identity else None
             self._discord_current_pid = pid
             self._discord_game_comm = comm
 
@@ -1151,7 +1152,7 @@ class ViceDaemon:
         if self._discord_current_game and self._discord_current_pid > 0:
             comm = _read_proc_comm(self._discord_current_pid)
             if comm and comm == self._discord_game_comm:
-                return self._discord_current_game
+                return self._canonical_game_name(self._discord_current_game)
         self._discord_scan_tick += 1
         if self._discord_scan_tick % 3:
             return None
@@ -1203,8 +1204,8 @@ class ViceDaemon:
         """Focused game name for clip filename tagging, or None.
 
         Sync (the recorder runs it in a thread, window detection shells
-        out to the compositor). Detection only matches the curated games
-        list, so arbitrary window titles never end up in filenames.
+        out to the compositor). Only recognized or confirmed identities
+        supply tags; unconfirmed window-title suggestions never do.
 
         Detection always runs so auto playlists work even with filename
         tagging turned off; the tag itself is only returned when enabled.
@@ -1243,36 +1244,44 @@ class ViceDaemon:
             game, scanned, candidates,
         )
         self._last_clip_game = game
+        resolved = self._resolve_game(win) if game and win else None
+        self._last_clip_game_id = resolved['id'] if resolved else None
         if not getattr(self.cfg.output, "tag_clips_with_game", False):
             return None
         return game
 
-    def _match_game(self, win: dict) -> Optional[str]:
-        from .active_window import read_steam_app_id
+    def _canonical_game_name(self, name):
+        from .games import display_name
+        registry = getattr(self, 'games', None)
+        identity = (registry.get(getattr(self, '_discord_current_game_id', None)) or registry.by_name(name)) if registry else None
+        if identity and identity['status'] not in {'recognized', 'confirmed'}:
+            return None
+        return display_name(identity) if identity else name
 
-        proc = (win.get("process") or "").lower()
-        cls  = (win.get("class") or "").lower()
-        haystacks = [proc, cls]
-        # Source games share one launcher binary, so the process name alone
-        # tags Half-Life 2 and Left 4 Dead 2 as Team Fortress 2 (#162). The
-        # app id is exact; without it nothing changes.
-        app_id = read_steam_app_id(win.get("pid"))
-        if app_id:
-            haystacks.append(f"steam_app_{app_id}")
-        haystacks = tuple(haystacks)
-        # User custom games first, explicit user intent beats the bundled list.
-        custom = [(g.name, g.matches) for g in self.cfg.discord.custom_games]
-        bundled = [(g["name"], g.get("matches")) for g in _DEFAULT_GAMES]
-        matched = _best_game_match(custom, haystacks) or _best_game_match(bundled, haystacks)
-        if matched:
-            return matched
-        # Not on either list. The lists stay the source of truth, since tags and
-        # auto playlists are keyed on their names, so Steam's own name only
-        # fills the gaps for games that aren't listed.
-        if not app_id:
-            from_class = re.match(r"steam_app_(\d+)$", cls)
-            app_id = from_class.group(1) if from_class else None
-        return steam_game_name(app_id) if app_id else None
+    def _resolve_game(self, win: dict):
+        from .games import GameLibrary
+        if not hasattr(self, 'games'):
+            self.games = GameLibrary()
+        return self.games.resolve(win, self.cfg.discord.custom_games,
+                                  suggestions=self.cfg.ui.game_suggestions, bundled=_DEFAULT_GAMES, steam_name=steam_game_name)
+
+    def _match_game(self, win: dict) -> Optional[str]:
+        from .games import display_name
+        game = self._resolve_game(win)
+        return display_name(game) if game else None
+
+    async def _game_observation_loop(self):
+        from .active_window import get_active_window
+        while True:
+            try:
+                window = await asyncio.to_thread(get_active_window)
+                if window:
+                    await asyncio.to_thread(self._match_game, window)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.debug('Game observation failed', exc_info=True)
+            await asyncio.sleep(5)
 
     def _disk_stats(self) -> Optional[dict]:
         """Free space where clips land, for the Home readout.
@@ -1428,6 +1437,11 @@ class ViceDaemon:
             await self.key_overlay.stop()
         except Exception:
             log.exception("Stopping the keyboard overlay failed")
+        game_task = getattr(self, '_game_task', None)
+        if game_task:
+            game_task.cancel()
+            await asyncio.gather(game_task, return_exceptions=True)
+            self._game_task = None
         if self._watchdog_task and not self._watchdog_task.done():
             self._watchdog_task.cancel()
             try:
@@ -1581,7 +1595,7 @@ class ViceDaemon:
         click.echo(f"[Vice] Screenshot saved: {out.name}", err=True)
         audio.play_screenshot(self.cfg.notifications.sound_volume,
                               self.cfg.notifications.screenshot_sound)
-        self.share.add_image(out, game=self._last_clip_game)
+        self.share.add_image(out, game=self._last_clip_game, game_id=getattr(self, '_last_clip_game_id', None))
         copied, copy_error = await copy_image_to_clipboard(out)
         if not copied:
             # Saved but not copied is worth saying out loud: the user is about
@@ -1628,12 +1642,26 @@ class ViceDaemon:
     async def _start_session(self) -> None:
         click.echo("[Vice] Starting session recording…", err=True)
         self._session_highlights = []
+        def session_game():
+            from .active_window import get_active_window
+            window = get_active_window()
+            identity = self._resolve_game(window) if window else None
+            if identity is None:
+                hit = self._scan_visible_for_game()
+                identity = self._resolve_game(hit[1]) if hit else None
+            return identity
+        try:
+            identity = await asyncio.to_thread(session_game)
+        except Exception:
+            log.debug('Session game detection failed', exc_info=True)
+            identity = None
         path = await self.recorder.start_session()
         if path is None:
             click.echo("[Vice] Session recording failed to start", err=True)
             return
         self._session_active = True
         self._session_path   = path
+        self._session_game_id = identity['id'] if identity else None
         audio.play_session_start(self.cfg.notifications.sound_volume,
                                  self.cfg.notifications.session_start_sound)
         click.echo(f"[Vice] Session recording started → {path}", err=True)
@@ -1656,7 +1684,10 @@ class ViceDaemon:
                                self.cfg.notifications.session_end_sound)
         if path and self.share:
             slug = path.stem
-            url  = self.share.add_clip(path)
+            from .games import display_name
+            registry = getattr(self, 'games', None)
+            identity = registry.get(getattr(self, '_session_game_id', None)) if registry else None
+            url = self.share.add_clip(path, game=display_name(identity), game_id=identity['id']) if identity else self.share.add_clip(path)
             click.echo(f"[Vice] Session clip saved: {path}", err=True)
             click.echo(f"[Vice] Share URL: {url}", err=True)
             # Persist the highlights that were collected during the session

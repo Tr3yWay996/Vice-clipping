@@ -39,6 +39,29 @@ def _read_proc_comm(pid: int) -> str:
         return ""
 
 
+def process_identity(pid) -> dict:
+    """Read full executable identity; Linux comm is truncated to 15 bytes."""
+    result = {}
+    try:
+        pid = int(pid or 0)
+        if pid <= 0:
+            return {}
+        root = Path(f'/proc/{pid}')
+        executable = os.readlink(root / 'exe')
+        name = executable.rsplit('/', 1)[-1]
+        result = {'executable':name, 'executable_path':executable}
+        comm = (root / 'comm').read_text(errors='replace').strip()
+        if 'wine' in name.casefold() or comm.casefold().endswith('.exe') or '.exe' in comm.casefold():
+            args = (root / 'cmdline').read_bytes()[:32768].decode(errors='replace').split('\0')
+            for arg in args:
+                if arg.casefold().endswith('.exe') and not arg.startswith('-'):
+                    result = {'executable':arg.replace('\\', '/').rsplit('/', 1)[-1], 'executable_path':arg}
+                    break
+        return result
+    except (OSError, ValueError, TypeError):
+        return result
+
+
 def read_steam_app_id(pid) -> Optional[str]:
     """Steam's app id for a running process, read from its environment.
 
@@ -704,3 +727,29 @@ def steam_game_name(app_id) -> Optional[str]:
         return name
     log.debug("No Steam manifest for app %s in any library", app_id)
     return None
+
+
+def window_title(win: ActiveWindow) -> str:
+    """Local fallback only; verify the title still belongs to the sampled PID."""
+    try:
+        adapter = _current_adapter()
+        pid = int(win.get('pid') or 0)
+        if win.get('window_id'):
+            return _run(['xdotool','getwindowname',str(win['window_id'])]).strip()[:200]
+        if adapter is _get_active_window_hyprland:
+            data = json.loads(_run(['hyprctl','activewindow','-j']))
+            return str(data.get('title') or '')[:200] if int(data.get('pid') or 0) == pid and pid else ''
+        if adapter is _get_active_window_sway:
+            data = _walk_sway_tree(json.loads(_run(['swaymsg','-t','get_tree']))) or {}
+            return str(data.get('name') or '')[:200] if int(data.get('pid') or 0) == pid and pid else ''
+        if adapter is _get_active_window_niri:
+            data = _niri_focused_window() or {}
+            return str(data.get('title') or '')[:200] if int(data.get('pid') or 0) == pid and pid else ''
+        if adapter is _get_active_window_kde and pid:
+            before = _run(['kdotool','getactivewindow','getwindowpid']).strip()
+            title = _run(['kdotool','getactivewindow','getwindowname']).strip()
+            after = _run(['kdotool','getactivewindow','getwindowpid']).strip()
+            return title[:200] if before == after == str(pid) else ''
+    except (ValueError, TypeError):
+        pass
+    return ''

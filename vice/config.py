@@ -284,6 +284,8 @@ class NotificationsConfig:
 
 @dataclass
 class UIConfig:
+    game_suggestions: bool = True
+    game_online_lookup: bool = False
     home_side_panel: str = 'queue'
     arrow_key_behavior: str = 'playback'
     # Let Chromium decode clip previews on the GPU. Off by default: hardware
