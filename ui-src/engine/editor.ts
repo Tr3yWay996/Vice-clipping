@@ -1,7 +1,10 @@
 import {formatBytes} from '../lib/format';
 // Aliased: this file uses `t` as a local for times and tracks throughout.
 import {t as translate} from '../lib/i18n';
-import {clipNeedsProxy, playbackUrl} from '../lib/playback';
+import {playbackUrl, createSeekScheduler} from '../lib/playback';
+import {bindPlaybackShortcuts, playbackShortcut} from '../lib/playbackShortcuts';
+import {MIN_SELECTION, type Boundary} from '../lib/trimming';
+import {trimAtPlayhead} from './editorTrimming';
 import {clipTitle, type Clip} from '../lib/types';
 import {
   ED_FONTS,
@@ -58,6 +61,7 @@ interface PoolEntry {
 }
 
 interface PoolVideo extends HTMLVideoElement {
+  _failed?: boolean;
   _key: string | null;
   _need: number;
   _role: string | null;
@@ -106,6 +110,8 @@ export interface EditorEngine {
   fit: () => void;
   seek: (t: number) => void;
   setPlaying: (playing: boolean) => void;
+  setMonitoring: (volume: number, muted: boolean) => void;
+  trimSelected: (boundary: Boundary) => void;
   split: () => void;
   detachAudio: () => void;
   duplicate: () => void;
@@ -123,6 +129,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let sel: string | null = null;
   let playhead = 0;
   let playing = false;
+  let monitorVolume = 1;
+  let monitorMuted = false;
+  let unbindKeyboard: (() => void) | undefined;
   let pps = 12;
   let clipboard: EdItem | null = null;
   let missing = new Set<string>();
@@ -138,6 +147,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let preparingNow = false;
   let audioWaiting = false;
   let stageEmpty = true;
+  let stageFailed = false;
+  let explicitSeek = false;
+  const pendingSeeks = new WeakMap<HTMLMediaElement, number>();
+  const scrub = createSeekScheduler(at => seek(at));
 
   let raf: number | null = null;
   let lastTick = 0;
@@ -221,6 +234,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
       preparing: preparingNow,
+      failed: stageFailed,
       empty: stageEmpty,
     };
   }
@@ -639,6 +653,18 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
           v.className = 'ed-vhide';
           v._key = null;
           v._need = 0;
+          watchMediaSeeking(v);
+          v.addEventListener('loadstart', () => {v._failed = false;});
+          v.addEventListener('error', () => {
+            if (!v.getAttribute('src') || !mounted) return;
+            v._failed = true;
+            if (v._role === 'cur') setPlaying(false);
+          });
+          v.addEventListener('loadeddata', () => {
+            if (!v.getAttribute('src') || !mounted) return;
+            v._failed = v.videoWidth === 0;
+            renderPreviewFrame(false);
+          });
           box!.stage.insertBefore(v, box!.stage.firstChild);
           return v;
         };
@@ -721,6 +747,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const el = free.find(v => !v._key) || free.sort((a, b) => a._need - b._need)[0];
       if (!el) return;
       el._key = n.key;
+      pendingSeeks.delete(el);
       el.src = playbackUrl(clipOf(n.it));
       warmStart(el, n.parkAt);
       n.el = el;
@@ -750,14 +777,32 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
    * only a real desync triggers a correction.
    */
   function seekVideo(v: HTMLMediaElement, t: number, tol?: number) {
-    if (v.readyState < 1 || v.seeking) return;
-    if (Math.abs(v.currentTime - t) > (tol || ED_DRIFT)) {
+    if (v.readyState < 1 || v.seeking) {
+      if (explicitSeek || !playing) pendingSeeks.set(v, t);
+      return;
+    }
+    pendingSeeks.delete(v);
+    if (Math.abs(v.currentTime - t) > (explicitSeek || !playing ? .000001 : (tol ?? ED_DRIFT))) {
       try {
         v.currentTime = t;
       } catch (err) {
         console.debug('Seeking a preview element failed', err);
       }
     }
+  }
+
+  function watchMediaSeeking(media: HTMLMediaElement) {
+    const ready = () => {
+      if (!mounted || !media.getAttribute('src')) return;
+      const target = pendingSeeks.get(media);
+      if (target !== undefined && !media.seeking && media.readyState >= 1) {
+        pendingSeeks.delete(media);
+        if (Math.abs(media.currentTime - target) > .000001) {media.currentTime = target; return;}
+      }
+      if (!playing) renderPreviewFrame(false);
+    };
+    media.addEventListener('loadedmetadata', ready);
+    media.addEventListener('seeked', ready);
   }
 
   const playTol = () => (playing ? 0.45 : ED_DRIFT);
@@ -833,9 +878,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     });
 
     const desired = (it.offset || 0) + (t - it.start);
+    cur.volume = monitorVolume;
     if (playing && !audioWaiting) {
       cur._warmUntil = 0;
-      cur.muted = Boolean(it.muted);
+      cur.muted = monitorMuted || Boolean(it.muted);
       if (cur.paused) void cur.play().catch(() => {});
       // The clock reads its time from the master element, so correcting that
       // element is chasing its own tail. Only a fresh cut, or a track playing
@@ -846,7 +892,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       cur._parkAt = desired;
     } else {
       if (!cur.paused) cur.pause();
-      cur.muted = Boolean(it.muted);
+      cur.muted = monitorMuted || Boolean(it.muted);
       seekVideo(cur, desired);
     }
 
@@ -936,6 +982,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       let a = audioPool[it.id];
       if (!a) {
         a = new Audio();
+        watchMediaSeeking(a);
         a.preload = 'auto';
         a.addEventListener('loadeddata', () => {
           if (mounted && !playing) renderPreviewFrame(false);
@@ -950,7 +997,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const revision = new URL(clip.video_url, window.location.href).search;
       const url = `/api/clips/${encodeURIComponent(clip.slug)}/audio/${it.audioStream ?? 0}${revision}`;
       if (a.getAttribute('src') !== url) a.src = url;
-      a.volume = Math.max(0, Math.min(1, it.volume ?? 1));
+      a.volume = Math.max(0, Math.min(1, it.volume ?? 1)) * monitorVolume;
+      a.muted = monitorMuted;
       seekVideo(a, (it.offset || 0) + (t - it.start), playTol());
       audible.push(a);
     });
@@ -1104,6 +1152,24 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     emit();
   }
 
+  function setMonitoring(volume: number, muted: boolean) {
+    monitorVolume = Math.max(0, Math.min(1, volume));
+    monitorMuted = muted;
+    renderPreviewFrame(false);
+  }
+
+  function trimSelected(boundary: Boundary) {
+    const selected = selItem();
+    const source = selected ? clipOf(selected) : null;
+    const next = source?.duration && !source.unreadable
+      ? trimAtPlayhead(project!.items, selected, boundary, playhead, source.duration) : null;
+    if (!next) {deps.notify(translate('editor.invalidTrimContext'), 'error'); return;}
+    if (JSON.stringify(next) === JSON.stringify(project!.items)) return;
+    begin();
+    project!.items = next;
+    commit();
+  }
+
   // ── clock ───────────────────────────────────────────────────────
   function setPlaying(next: boolean) {
     if (next && end() <= 0) return;
@@ -1209,14 +1275,15 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
     const anyVideo = states.some(st => st);
     const nextEmpty = !anyVideo;
+    const nextFailed = states.some(st => Boolean(st?.cur._failed || st?.cur.error));
     const nextPreparing = audioWaiting || states.some(st => {
       if (!st) return false;
-      const c = clipOf(st.it);
-      return Boolean(c && clipNeedsProxy(c) && st.cur.readyState < 2);
+      return !st.cur._failed && !st.cur.error && st.cur.readyState < 2;
     });
-    if (nextEmpty !== stageEmpty || nextPreparing !== preparingNow) {
+    if (nextEmpty !== stageEmpty || nextPreparing !== preparingNow || nextFailed !== stageFailed) {
       stageEmpty = nextEmpty;
       preparingNow = nextPreparing;
+      stageFailed = nextFailed;
       emit();
     }
 
@@ -1238,7 +1305,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function seek(t: number) {
     playhead = Math.max(0, Math.min(totalSec(), t));
     updatePlayheadDom();
-    renderPreviewFrame(true);
+    explicitSeek = true;
+    try {renderPreviewFrame(true);} finally {explicitSeek = false;}
     emit();
   }
 
@@ -1408,9 +1476,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       ruler.addEventListener('pointerdown', e => {
         capture(ruler, e);
         const rect = ruler.getBoundingClientRect();
-        const upd = (ev: PointerEvent) => seek((ev.clientX - rect.left) / pps);
-        upd(e);
-        const up = () => {
+        const upd = (ev: PointerEvent) => scrub.seek((ev.clientX - rect.left) / pps, false);
+        scrub.seek((e.clientX - rect.left) / pps);
+        const up = (ev: PointerEvent) => {
+          scrub.seek((ev.clientX - rect.left) / pps);
           ruler.removeEventListener('pointermove', upd);
           ruler.removeEventListener('pointerup', up);
         };
@@ -1551,13 +1620,13 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const dt = (ev.clientX - sx) / pps;
       if (side === 'l') {
         let d = snapTime(os + dt, it.id) - os;
-        d = Math.max(Math.max(-oo, prevEnd - os), Math.min(od - 0.5, d));
+        d = Math.max(Math.max(-oo, prevEnd - os), Math.min(od - Math.min(MIN_SELECTION, od), d));
         final = {start: round(os + d), dur: round(od - d), offset: round(oo + d)};
         el.style.left = `${final.start! * pps}px`;
         el.style.width = `${Math.max(8, final.dur! * pps)}px`;
       } else {
         let nd = snapTime(os + od + dt, it.id) - os;
-        nd = Math.max(0.5, Math.min(maxD, nd));
+        nd = Math.max(Math.min(MIN_SELECTION, od), Math.min(maxD, nd));
         final = {dur: round(nd)};
         el.style.width = `${Math.max(8, final.dur! * pps)}px`;
       }
@@ -1953,22 +2022,22 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   // ── keyboard ────────────────────────────────────────────────────
   function onKeyDown(e: KeyboardEvent) {
-    if (!mounted || !project) return;
-    const tg = e.target as HTMLElement;
-    if (
-      tg.tagName === 'INPUT' ||
-      tg.tagName === 'TEXTAREA' ||
-      tg.tagName === 'SELECT' ||
-      tg.isContentEditable
-    ) {
-      return;
-    }
-    if (document.querySelector('.scrim')) return;
+    if (!mounted || !project) return false;
+    if (e.altKey) return false;
+    if (playbackShortcut(e, {
+      toggle: () => setPlaying(!playing), mute: () => {
+        if (deps.monitoring) deps.monitoring().toggleMuted();
+        else setMonitoring(monitorVolume, !monitorMuted);
+      },
+      seek: at => seek(at), time: () => playhead, duration: end,
+      volume: () => deps.monitoring?.().volume ?? monitorVolume,
+      setVolume: level => {
+        if (deps.monitoring) deps.monitoring().setVolume(level);
+        else setMonitoring(level, monitorMuted);
+      }, boundary: trimSelected,
+    })) return true;
     const mod = e.metaKey || e.ctrlKey;
-    if (e.code === 'Space') {
-      e.preventDefault();
-      setPlaying(!playing);
-    } else if (e.key === 'Delete' || e.key === 'Backspace') remove();
+    if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) remove();
     else if (mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
       undo();
@@ -1985,18 +2054,21 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       e.preventDefault();
       duplicate();
     } else if (!mod && (e.key === 's' || e.key === 'S')) split();
-    else if (e.key === 'ArrowLeft') seek(Math.max(0, playhead - (e.shiftKey ? 0.1 : 1)));
-    else if (e.key === 'ArrowRight') seek(Math.min(end(), playhead + (e.shiftKey ? 0.1 : 1)));
-    else if (e.key === 'Escape') select(null);
-    else if (e.key === '+' || e.key === '=') zoom(1.3);
-    else if (e.key === '-') zoom(1 / 1.3);
+
+    else if (!mod && e.key === 'Escape') select(null);
+    else if (!mod && (e.key === '+' || e.key === '=')) zoom(1.3);
+    else if (!mod && e.key === '-') zoom(1 / 1.3);
+    else return false;
+    return true;
   }
 
   // ── lifecycle ───────────────────────────────────────────────────
   function mount(containers: EditorContainers) {
     box = containers;
     mounted = true;
-    document.addEventListener('keydown', onKeyDown);
+    unbindKeyboard?.();
+    unbindKeyboard = bindPlaybackShortcuts({root: () => box?.stage.closest<HTMLElement>('.editor') ?? box?.stage ?? null,
+      priority:20, handle:onKeyDown});
     wireStage();
     refreshMissing();
     renderLibrary();
@@ -2006,7 +2078,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function destroy() {
     mounted = false;
-    document.removeEventListener('keydown', onKeyDown);
+    unbindKeyboard?.();
+    unbindKeyboard = undefined;
+    scrub.cancel();
     setPlaying(false);
     if (raf) cancelAnimationFrame(raf);
     raf = null;
@@ -2069,6 +2143,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     fit,
     seek,
     setPlaying,
+    setMonitoring,
+    trimSelected,
     split,
     detachAudio,
     duplicate,

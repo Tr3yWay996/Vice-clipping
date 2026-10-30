@@ -1,11 +1,13 @@
 import {useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
+import {PlayPauseButton, PlaybackTime, VolumeControl, VideoLoading, usePlaybackAudio} from '../components/PlaybackControls';
+import {videoFailureMessage} from '../lib/playback';
 import {onWsMessage} from '../lib/ws';
 import {resolveAccent} from '../theme/viceTheme';
 import {useStore} from '../state/store';
 import {createEditorEngine, type EditorEngine} from '../engine/editor';
-import {ED_FONTS, ED_SWATCHES, edFmt} from '../engine/editorConstants';
+import {ED_FONTS, ED_SWATCHES} from '../engine/editorConstants';
 import type {EdSnapshot, EdTab} from '../engine/editorTypes';
 import {Modal} from '../components/Modal';
 import {IconClose} from '../components/Icons';
@@ -27,6 +29,9 @@ const TABS: Array<[EdTab, () => string]> = [
 
 export function Editor() {
   const {state, notify, dispatch} = useStore();
+  const audio = usePlaybackAudio();
+  const audioRef = useRef(audio);
+  audioRef.current = audio;
   const {clips, accent, customAccent, editorProjectRevision, config} = state;
   // The editor paints its own timeline, so it needs the resolved accent
   // rather than a name it can look up in the generated table.
@@ -51,6 +56,7 @@ export function Editor() {
   if (!engineRef.current) {
     engineRef.current = createEditorEngine({
       clips: () => clipsRef.current,
+      monitoring: () => audioRef.current,
       notify: (title, tone = 'accent') =>
         notify({
           kind: tone === 'error' ? 'error' : 'info',
@@ -68,6 +74,7 @@ export function Editor() {
   const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => engine.subscribe(setSnap), [engine]);
+  useEffect(() => engine.setMonitoring(audio.volume, audio.muted), [engine, audio.volume, audio.muted]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,9 +199,8 @@ export function Editor() {
                   <span>{t('editor.dragFromLibrary')}</span>
                 </div>
               ) : null}
-              {snap.preparing ? (
-                <div className="ed-stage-preparing">{t('editor.preparingMedia')}</div>
-              ) : null}
+              <VideoLoading preparing={snap.preparing && !snap.failed}/>
+              {snap.failed ? <div className="video-overlay" role="status"><p>{videoFailureMessage()}</p></div> : null}
               <div className="ed-fade-overlay" ref={fadeRef} />
             </div>
           </div>
@@ -320,18 +326,10 @@ export function Editor() {
               aria-label={t('editor.backToStart')}>
               <StartGlyph />
             </button>
-            <button
-              type="button"
-              className="ed-play"
-              onClick={() => engine.setPlaying(!snap.playing)}
-              title={t('editor.playPause')}
-              aria-label={snap.playing ? t('editor.pause') : t('editor.play')}>
-              {snap.playing ? <PauseGlyph /> : <PlayGlyph />}
-            </button>
+            <PlayPauseButton className="ed-play" paused={!snap.playing} onToggle={() => engine.setPlaying(!snap.playing)}/>
             <div className="ed-spacer" />
-            <span className="ed-time mono">
-              {edFmt(snap.playhead)} <span className="dim">/ {edFmt(snap.duration)}</span>
-            </span>
+            <PlaybackTime current={snap.playhead} duration={snap.duration}/>
+            <VolumeControl volume={audio.volume} muted={audio.muted} onChange={audio.setVolume} onToggleMute={audio.toggleMuted}/>
             <button
               type="button"
               className="btn btn-sm"
@@ -340,6 +338,10 @@ export function Editor() {
               {t('editor.exportBtn')}
             </button>
           </div>
+          <details className="ed-shortcuts">
+            <summary>{t('playback.shortcuts')}</summary>
+            <p>{t('playback.shortcutHelp')}</p><p>{t('editor.shortcutHelp')}</p>
+          </details>
         </div>
       </div>
 
@@ -778,16 +780,6 @@ const StartGlyph = () => (
   <svg {...stroke} width={13} height={13}>
     <polygon points="19 20 9 12 19 4 19 20" />
     <line x1="5" x2="5" y1="19" y2="5" />
-  </svg>
-);
-const PlayGlyph = () => (
-  <svg viewBox="0 0 24 24" width={14} height={14} fill="currentColor" aria-hidden="true">
-    <path d="M7 4l13 8-13 8z" />
-  </svg>
-);
-const PauseGlyph = () => (
-  <svg viewBox="0 0 24 24" width={14} height={14} fill="currentColor" aria-hidden="true">
-    <path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" />
   </svg>
 );
 const MinusGlyph = () => (

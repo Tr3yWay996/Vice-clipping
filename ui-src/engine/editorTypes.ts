@@ -58,6 +58,7 @@ export interface EdSnapshot {
   canRedo: boolean;
   /** Set while the daemon is transcoding an H.265 proxy for a clip on stage. */
   preparing: boolean;
+  failed: boolean;
   empty: boolean;
 }
 
@@ -65,4 +66,5 @@ export interface EditorDeps {
   clips: () => Clip[];
   notify: (title: string, tone?: 'accent' | 'error') => void;
   accent: () => string;
+  monitoring?: () => {volume: number; setVolume: (level: number) => void; toggleMuted: () => void};
 }
