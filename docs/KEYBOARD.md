@@ -91,6 +91,8 @@ item gains, recorded audio, project data and export settings are unchanged.
 Paused fine seeks use an exact target; a seek already in progress retains the
 latest requested position until the decoder can accept it. All three surfaces
 coalesce pointer scrubbing through the same animation-frame scheduler.
+Decoder warm-up is time-bounded and parks back at the paused position, so muted
+warm-up cannot keep moving the picture underneath a stopped composition clock.
 
 ## Validation
 
@@ -117,3 +119,10 @@ Remaining manual checks on KDE Plasma Wayland:
 Run the normal Python suite, `npm test`, `npm run typecheck`,
 `npm run i18n:check` and `npm run build`. KDE/native GPU behavior is not claimed
 as verified by the browser checks.
+
+Implementation results: 911 Python tests run (905 passed, 6 skipped), 79 frontend
+tests passed, and TypeScript, localization, Python compilation and production
+build passed. The final generated assets also passed the Python UI-static checks.
+The real Chromium check included the bounded decoder warm-up regression and the
+French trimmer at 894×799. Existing runtime font-path/single-bundle warnings and
+older translation gaps outside this change remain.

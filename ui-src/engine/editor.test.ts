@@ -79,4 +79,12 @@ describe('editor shared transport and non-ripple keyboard trimming',()=>{
   expect(video.currentTime).toBeCloseTo(5.3);expect(engine.snapshot().playhead).toBe(8.3);
   expect(engine.snapshot().playing).toBe(false);
  });
+ it('parks the decoder after warm-up instead of playing underneath a paused playhead',()=>{
+  const video=root.querySelector<HTMLVideoElement>('video:not(.ed-vhide)')!;
+  Object.defineProperty(video,'readyState',{value:4,configurable:true});
+  expect(video.paused).toBe(false);
+  vi.advanceTimersByTime(400);
+  expect(video.paused).toBe(true);expect(video.currentTime).toBe(5);
+  expect(engine.snapshot().playhead).toBe(8);expect(engine.snapshot().playing).toBe(false);
+ });
 });

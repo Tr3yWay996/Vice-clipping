@@ -62,6 +62,7 @@ interface PoolEntry {
 
 interface PoolVideo extends HTMLVideoElement {
   _failed?: boolean;
+  _warmTimer?: number;
   _key: string | null;
   _need: number;
   _role: string | null;
@@ -592,6 +593,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   /** Detaching does not free what was decoded: the source has to go first. */
   function dropVideo(v: PoolVideo) {
+    window.clearTimeout(v._warmTimer);
+    v._warmTimer = undefined;
     v.pause();
     v.removeAttribute('src');
     v._key = null;
@@ -813,10 +816,17 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
    * in-point with the decoder already rolling.
    */
   function warmStart(v: PoolVideo, parkAt: number) {
+    window.clearTimeout(v._warmTimer);
     v._parkAt = parkAt || 0;
     v._warmUntil = performance.now() + ED_WARM_MS;
     v.muted = true;
     void v.play().catch(() => {});
+    v._warmTimer = window.setTimeout(() => {
+      v._warmTimer = undefined;
+      if (!mounted || !v.getAttribute('src')) return;
+      settle(v);
+      renderPreviewFrame(false);
+    }, ED_WARM_MS + 1);
   }
 
   const warming = (v: PoolVideo) => Boolean(v._warmUntil && performance.now() < v._warmUntil);
@@ -881,6 +891,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     cur.volume = monitorVolume;
     if (playing && !audioWaiting) {
       cur._warmUntil = 0;
+      window.clearTimeout(cur._warmTimer);
+      cur._warmTimer = undefined;
       cur.muted = monitorMuted || Boolean(it.muted);
       if (cur.paused) void cur.play().catch(() => {});
       // The clock reads its time from the master element, so correcting that
