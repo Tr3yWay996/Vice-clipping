@@ -405,7 +405,7 @@ export function TrimModal({
             <span className="trim-head-label">{t('trim.heading')}</span>
             {renamingTitle ? (
               <InlineRename
-                className="trim-rename"
+                className="trim-rename" stopPropagation
                 label={t('card.nameLabel')}
                 initial={pendingName ?? clipTitle(clip)}
                 onCancel={() => setRenamingTitle(false)}
@@ -417,8 +417,10 @@ export function TrimModal({
             ) : (
               <span
                 className="trim-head-name"
-                title={t('viewer.doubleClickRename')}
-                onDoubleClick={() => setRenamingTitle(true)}>
+                title={t('viewer.clickRename')}
+                role="button" tabIndex={0}
+                onClick={e => {e.stopPropagation();setRenamingTitle(true);}}
+                onKeyDown={e => {if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();setRenamingTitle(true);}}}>
                 {pendingName ?? clipTitle(clip)}
               </span>
             )}

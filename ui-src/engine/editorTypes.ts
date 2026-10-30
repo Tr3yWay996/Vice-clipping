@@ -18,6 +18,7 @@ export interface EdItem {
   start: number;
   dur: number;
   clipId?: string;
+  sourceName?: string;
   offset?: number;
   muted?: boolean;
   audioStream?: number;

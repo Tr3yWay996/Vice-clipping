@@ -49,6 +49,7 @@ export interface ViewerProps {
   onDelete: (clip: Clip) => void;
   onOpenExternally: (clip: Clip) => void;
   onRename: (clip: Clip, name: string) => void;
+  renameTransition?: {from:string;to:string}|null;
   notify: (title: string, detail?: string, tone?: 'accent' | 'error') => void;
 }
 
@@ -127,6 +128,9 @@ export function Viewer(props: ViewerProps) {
 
   const index = clip ? clips.findIndex(c => c.slug === clip.slug) : -1;
   const open = props.clip !== null;
+  const loadedSlug = useRef<string|null>(null);
+  const resumeRename = useRef<{time:number;paused:boolean;rate:number}|null>(null);
+  const previousTrim = useRef(false);
 
   // Attach the source only when it actually changes. Stepping back to the clip
   // already loaded must not reload it, because a fresh load is what counts as
@@ -142,19 +146,28 @@ export function Viewer(props: ViewerProps) {
   const trimOpen = props.trimOpen;
   useLayoutEffect(() => {
     const video = videoRef.current;
-    if (!open || !video || !clip) return;
-    const src = playbackUrl(clip);
-    if (video.getAttribute('src') === src) {
-      if (!trimOpen) playQuietly(video);
+    const leftTrim = previousTrim.current && !trimOpen;
+    previousTrim.current = trimOpen;
+    if (!open || !video || !clip) {
+      loadedSlug.current = null;
+      resumeRename.current = null;
       return;
     }
+    const src = playbackUrl(clip);
+    if (video.getAttribute('src') === src) {
+      if (leftTrim) playQuietly(video);
+      return;
+    }
+    const renamed = props.renameTransition?.from === loadedSlug.current && props.renameTransition?.to === clip.slug;
+    resumeRename.current = renamed ? {time:video.currentTime,paused:video.paused,rate:video.playbackRate} : null;
+    loadedSlug.current = clip.slug;
     video.pause();
     video.src = src;
     video.load();
     setPreparing(clipNeedsProxy(clip));
-    setPosition({current: 0, duration: 0});
-    if (!trimOpen) playQuietly(video);
-    void api
+    if (!renamed) setPosition({current: 0, duration: 0});
+    if (!trimOpen && !renamed) playQuietly(video);
+    if (!renamed) void api
       .markViewed(clip.slug)
       .catch(err => console.debug('Recording the view failed', err));
   }, [clip, trimOpen, open]);
@@ -461,7 +474,7 @@ export function Viewer(props: ViewerProps) {
             <div className="viewer-heading">
               {renamingTitle ? (
                 <InlineRename
-                  className="viewer-rename"
+                  className="viewer-rename" stopPropagation
                   label={t('card.nameLabel')}
                   initial={clipTitle(clip)}
                   onCancel={() => setRenamingTitle(false)}
@@ -472,8 +485,10 @@ export function Viewer(props: ViewerProps) {
                 />
               ) : (
                 <h2
-                  title={t('viewer.doubleClickRename')}
-                  onDoubleClick={() => setRenamingTitle(true)}>
+                  title={t('viewer.clickRename')}
+                  role="button" tabIndex={0}
+                  onClick={e => {e.stopPropagation();setRenamingTitle(true);}}
+                  onKeyDown={e => {if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();setRenamingTitle(true);}}}>
                   {clipTitle(clip)}
                 </h2>
               )}
@@ -542,14 +557,22 @@ export function Viewer(props: ViewerProps) {
                     : 0,
                 })
               }
-              onLoadedMetadata={e =>
+              onLoadedMetadata={e => {
+                const resume = resumeRename.current;
+                resumeRename.current = null;
+                if (resume) {
+                  const video = e.currentTarget;
+                  video.currentTime = Math.min(resume.time, Number.isFinite(video.duration) ? video.duration : resume.time);
+                  video.playbackRate = resume.rate;
+                  if (!resume.paused && !trimOpen) playQuietly(video);
+                }
                 setPosition({
                   current: e.currentTarget.currentTime,
                   duration: Number.isFinite(e.currentTarget.duration)
                     ? e.currentTarget.duration
                     : 0,
-                })
-              }
+                });
+              }}
               onPlay={() => setPaused(false)}
               onPause={() => setPaused(true)}
               onCanPlay={() => setPreparing(false)}
