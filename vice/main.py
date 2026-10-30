@@ -141,6 +141,7 @@ class ViceDaemon:
         from .games import GameLibrary
         self.games = GameLibrary()
         self._game_task = None
+        self._headless_trash_task = None
         self.recorder = create_recorder(self.cfg)
         self.hotkeys  = HotkeyListener()
         self.share:   Optional[ShareServer] = None
@@ -388,6 +389,8 @@ class ViceDaemon:
             self._discord_task = asyncio.create_task(self._discord_presence_loop())
 
         self._game_task = asyncio.create_task(self._game_observation_loop())
+        if not self.share:
+            self._headless_trash_task = asyncio.create_task(self._headless_trash_cleanup())
         self._watchdog_task = asyncio.create_task(self._recorder_watchdog_loop())
         self._upgrade_task = asyncio.create_task(self._upgrade_watch_loop())
         self._sync_follow_mouse_task()
@@ -1283,6 +1286,23 @@ class ViceDaemon:
                 log.debug('Game observation failed', exc_info=True)
             await asyncio.sleep(5)
 
+    async def _headless_trash_cleanup(self):
+        """Retention still runs when the local sharing/UI server is disabled."""
+        from .trash import TrashStore
+        from .editor import EditorProjectStore
+        store, project = TrashStore(), EditorProjectStore()
+        while True:
+            for tid in store.cleanup_candidates(self.cfg.output.trash_retention_days):
+                try:
+                    entry = store.get(tid)
+                    restored = entry['state'] == 'restored'
+                    if entry['kind'] == 'clip' and not restored:
+                        project.on_clip_deleted(f'trash:{tid}')
+                    store.discard(entry, restored=restored)
+                except (OSError, ValueError):
+                    log.warning('Trash cleanup deferred for unavailable item %s', tid)
+            await asyncio.sleep(3600)
+
     def _disk_stats(self) -> Optional[dict]:
         """Free space where clips land, for the Home readout.
 
@@ -1442,6 +1462,11 @@ class ViceDaemon:
             game_task.cancel()
             await asyncio.gather(game_task, return_exceptions=True)
             self._game_task = None
+        trash_task = getattr(self, '_headless_trash_task', None)
+        if trash_task:
+            trash_task.cancel()
+            await asyncio.gather(trash_task, return_exceptions=True)
+            self._headless_trash_task = None
         if self._watchdog_task and not self._watchdog_task.done():
             self._watchdog_task.cancel()
             try:

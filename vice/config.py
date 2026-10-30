@@ -196,6 +196,8 @@ class HotkeyConfig:
 
 @dataclass
 class OutputConfig:
+    # Zero disables automatic expiration; age starts when media enters Trash.
+    trash_retention_days: int = 30
     directory: str = str(actual_home_dir() / "Videos" / "Vice")
     # Screenshots live apart from clips, because a picture viewer indexing a
     # folder of 4 GB videos is nobody's idea of a good time.

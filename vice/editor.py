@@ -764,6 +764,8 @@ class EditorProjectStore:
             for it in items:
                 if isinstance(it, dict) and it.get("clipId") == old_slug:
                     it["clipId"] = new_slug
+                    if old_slug.startswith('trash:'):
+                        it.pop('sourceName', None)
                     changed = True
             return changed
         return self._mutate_items(rename)
@@ -777,6 +779,18 @@ class EditorProjectStore:
             items[:] = kept
             return True
         return self._mutate_items(drop)
+
+    def on_clip_trashed(self, slug: str, tid: str, item_ids: list[str], name=None) -> bool:
+        # Tombstones cannot resolve to a new recording that reuses the slug.
+        def mark(items):
+            changed = False
+            for item in items:
+                if isinstance(item, dict) and item.get('clipId') == slug and item.get('id') in item_ids:
+                    item['clipId'] = f'trash:{tid}'
+                    item['sourceName'] = name or slug
+                    changed = True
+            return changed
+        return self._mutate_items(mark)
 
 
 # ── export job ───────────────────────────────────────────────────────────────

@@ -1043,9 +1043,10 @@ def _quick_tunnel_url(line: str) -> Optional[str]:
 # ── share server ─────────────────────────────────────────────────────────────
 
 from .game_api import GameLibraryAPI
+from .trash_api import TrashAPI
 
 
-class ShareServer(GameLibraryAPI):
+class ShareServer(GameLibraryAPI, TrashAPI):
     def __init__(self, cfg, games=None) -> None:
         from .games import GameLibrary
         self.cfg = cfg
@@ -1083,6 +1084,7 @@ class ShareServer(GameLibraryAPI):
         self._share_tokens = _load_share_tokens()
         self._share_slugs = {token: slug for slug, token in self._share_tokens.items()}
         self.editor_project = EditorProjectStore()
+        self._init_trash()
 
         # One encoder across the library, shared by preview proxies and
         # Discord copies. Different clips used to spawn independent encoders,
@@ -1183,6 +1185,9 @@ class ShareServer(GameLibraryAPI):
         r.add_get("/api/displays",             self._api_get_displays)
         r.add_get("/api/audio-sources",        self._api_get_audio_sources)
         r.add_post("/api/config",              self._api_set_config)
+        r.add_get('/api/trash', self._api_trash_list)
+        r.add_post('/api/trash/actions', self._api_trash_action)
+        r.add_get('/api/trash/{tid}/thumbnail', self._api_trash_thumbnail)
         r.add_get("/api/jobs", self._api_jobs)
         r.add_post("/api/jobs/{jid}/{action}", self._api_job_control)
         r.add_get("/api/clips/{slug}/file", self._api_clip_file)
@@ -1213,14 +1218,16 @@ class ShareServer(GameLibraryAPI):
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
+        await self._recover_trash()
         # Pre-populate from output dir
         out_dir = resolve_path(self.cfg.output.directory)
         if out_dir.exists():
             media = list(out_dir.glob("*.mp4")) + list(out_dir.glob("*.mkv"))
             for clip in sorted(media, key=lambda p: p.stat().st_mtime):
                 self._clips[clip.stem] = clip
-        self._ensure_share_tokens()
         self.rescan_images()
+        self._index_restored_media()
+        self._ensure_share_tokens()
         # Both indexes in one call. backfill drops membership for anything not
         # in the set it is given, so handing it the clips alone would empty
         # every playlist of its screenshots on the next start.
@@ -1274,11 +1281,15 @@ class ShareServer(GameLibraryAPI):
         self._games_loop = asyncio.get_running_loop()
         await self._publish_games()
         self._jobs.start()
+        self._trash_task = asyncio.create_task(self._trash_cleanup_loop())
         if self.cfg.sharing.cloudflare_tunnel:
             await self._start_tunnel(public_port)
 
     async def stop(self) -> None:
         self._proxy_stopping = True
+        if getattr(self, '_trash_task', None):
+            self._trash_task.cancel()
+            await asyncio.gather(self._trash_task, return_exceptions=True)
         if hasattr(self, 'games'):
             self._games_stopping = True
             self.games.on_change = None
@@ -1521,6 +1532,7 @@ class ShareServer(GameLibraryAPI):
         return {
             "slug":       slug,
             "name":       path.name,
+            "media_id":   media_revision(path) if path.exists() else None,
             "size":       size,
             "created_at": created_at,
             "game":       self._game_for(slug),
@@ -1600,13 +1612,19 @@ class ShareServer(GameLibraryAPI):
             for shot in sorted(stills, key=lambda p: p.stat().st_mtime):
                 found[shot.stem] = shot
         self._images = found
+        if hasattr(self, 'trash'):
+            self._index_restored_media()
 
     async def _broadcast_image(self, slug: str, path: Path) -> None:
         # Thumbnails are what the grid loads. Without one it would pull the
         # full screenshot, which for a 4K library is hundreds of megabytes.
         if not _thumb_path(path).exists():
             await _make_thumb(path)
-        await self.broadcast({"type": "image_saved", "image": await self._image_json(slug, path)})
+        if self._images.get(slug) != path or not path.exists():
+            return
+        image = await self._image_json(slug, path)
+        if self._images.get(slug) == path and path.exists():
+            await self.broadcast({"type":"image_saved","image":image})
 
     async def _image_json(self, slug: str, path: Path) -> dict:
         try:
@@ -1633,6 +1651,7 @@ class ShareServer(GameLibraryAPI):
         return {
             "slug":       slug,
             "name":       path.name,
+            "media_id":   media_revision(path) if path.exists() else None,
             "size":       size,
             "created_at": created_at,
             "game":       self._game_for(image_slug(slug)),
@@ -2044,30 +2063,7 @@ class ShareServer(GameLibraryAPI):
             return web.json_response({"error": "Keyframe analysis is unavailable. Free trimming still works."}, status=503)
 
     async def _api_delete(self, req: web.Request) -> web.Response:
-        slug = req.match_info["slug"]
-        path = self._clips.pop(slug, None)
-        if path:
-            self._keyframes.invalidate(path)
-        _purge_clip_discord(path)
-        if path and path.exists():
-            path.unlink()
-        _purge_slug_thumbs(slug)
-        _purge_slug_proxies(slug)
-        (HIGHLIGHTS_DIR / f"{slug}.json").unlink(missing_ok=True)
-        keystore.delete_sidecar(slug)
-        self._meta.pop(slug, None)
-        self._meta_revisions.pop(slug, None)
-        if self._views.pop(slug, None) is not None:
-            _save_views(self._views)
-        self._forget_share_token(slug)
-        if hasattr(self, 'games'):
-            self.games.delete_clip(slug)
-        if self.playlists.on_clip_deleted(slug):
-            await self._broadcast_playlists()
-        if self.editor_project.on_clip_deleted(slug):
-            await self.broadcast({"type": "editor_project_changed"})
-        await self.broadcast({"type": "clip_deleted", "slug": slug})
-        return web.json_response({"ok": True})
+        return await self._api_trash_move(req, 'clip')
 
     async def _api_trim(self, req: web.Request) -> web.Response:
         body = await req.json()
@@ -2254,6 +2250,8 @@ class ShareServer(GameLibraryAPI):
         if not requested:
             return web.json_response({"ok": False, "error": "name is required"})
 
+        if self._trash_lock.locked():
+            return web.json_response({'code':'trash.errors.busy'}, status=409)
         # Spaces and punctuation are normalised away rather than rejected, so
         # "Insane wallbang" saves as Insane-wallbang.mp4. Keep the clip's own
         # container.
@@ -2276,6 +2274,7 @@ class ShareServer(GameLibraryAPI):
         new_revision = media_revision(new_path)
         self._keyframes.invalidate(path)
         new_slug = new_path.stem
+        self._rename_restored_path(path, new_path)
         if hasattr(self, 'games'):
             self.games.rename_clip(slug, new_slug)
 
@@ -2468,18 +2467,11 @@ class ShareServer(GameLibraryAPI):
         return web.json_response({"images": result})
 
     async def _api_image_delete(self, req: web.Request) -> web.Response:
-        slug = req.match_info["slug"]
-        path = self._images.pop(slug, None)
-        if path and path.exists():
-            path.unlink()
-        _purge_slug_thumbs(slug)
-        self.games.delete_clip(image_slug(slug))
-        if self.playlists.on_clip_deleted(image_slug(slug)):
-            await self._broadcast_playlists()
-        await self.broadcast({"type": "image_deleted", "slug": slug})
-        return web.json_response({"ok": True})
+        return await self._api_trash_move(req, 'image')
 
     async def _api_image_rename(self, req: web.Request) -> web.Response:
+        if self._trash_lock.locked():
+            return web.json_response({'code':'trash.errors.busy'}, status=409)
         slug, path = self._image_or_404(req)
         try:
             body = await req.json()
@@ -2502,6 +2494,7 @@ class ShareServer(GameLibraryAPI):
 
         self._images.pop(slug, None)
         self._images[stem] = target
+        self._rename_restored_path(path, target)
         self.games.rename_clip(image_slug(slug), image_slug(stem))
         _purge_slug_thumbs(slug)
         if self.playlists.on_clip_renamed(image_slug(slug), image_slug(stem)):
@@ -2770,9 +2763,23 @@ class ShareServer(GameLibraryAPI):
                 or not isinstance(body.get("items"), list)):
             return web.json_response({"ok": False, "error": "expected a project"},
                                      status=400)
+        body = self._protect_trash_references(body)
         self.editor_project.save({"version": 1, "tracks": body["tracks"],
                                   "items": body["items"]})
         return web.json_response({"ok": True})
+
+    def _protect_trash_references(self, project):
+        # An autosave or export started before a Trash event must not reuse
+        # another recording that has since acquired the original filename.
+        project = copy.deepcopy(project)
+        for entry in self.trash.entries.values():
+            if entry['kind'] != 'clip':
+                continue
+            for item in project.get('items', []):
+                if isinstance(item, dict) and item.get('clipId') == entry['slug'] and item.get('id') in entry['metadata'].get('editor_items', []):
+                    item['clipId'] = f"trash:{entry['id']}"
+                    item['sourceName'] = entry['name']
+        return project
 
     async def _editor_sources(self, project: dict) -> dict[str, Source]:
         sources: dict[str, Source] = {}
@@ -2807,6 +2814,7 @@ class ShareServer(GameLibraryAPI):
             return web.json_response(
                 {"ok": False, "error": "an export is already running"}, status=409)
 
+        raw = self._protect_trash_references(raw)
         sources = await self._editor_sources(raw)
         project, errors = validate_project(raw, sources)
         if errors:
@@ -2982,6 +2990,10 @@ class ShareServer(GameLibraryAPI):
         )
 
         body = await req.json()
+        from .trash import RETENTION_DAYS
+        retention = body.get('output', {}).get('trash_retention_days', self.cfg.output.trash_retention_days)
+        if type(retention) is not int or retention not in RETENTION_DAYS:
+            return web.json_response({'code':'trash.errors.retention'}, status=400)
 
         def _merge(base: dict, over: dict) -> dict:
             for k, v in over.items():
@@ -3119,6 +3131,8 @@ class ShareServer(GameLibraryAPI):
         # Always persist validated settings, even when live apply fails.
         # This keeps restart-intended config changes from being lost.
         save_cfg(new_cfg)
+        if old_cfg.output.trash_retention_days != new_cfg.output.trash_retention_days:
+            self._trash_wakeup.set()
         if old_cfg.ui.game_online_lookup != new_cfg.ui.game_online_lookup or old_cfg.discord.custom_games != new_cfg.discord.custom_games:
             self._queue_games_changed()
 
