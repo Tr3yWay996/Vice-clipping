@@ -455,6 +455,7 @@ class ViceDaemon:
             if not path.name.startswith("Vice_Session_"):
                 url = self.share.add_clip(path, game=self._last_clip_game, game_id=getattr(self, '_last_clip_game_id', None))
                 self._last_clip_game = None
+                self._last_clip_game_id = None
                 click.echo(f"[Vice] Share URL:  {url}\n")
                 if self.key_ring is not None and self.cfg.overlay.keys_in_clips:
                     end = getattr(self.recorder, "last_save_signal_at", None) or time.monotonic()
@@ -940,9 +941,11 @@ class ViceDaemon:
         screenshot_key = normalize_combo((self.cfg.hotkeys.screenshot or "").strip())
         if screenshot_key:
             async def _screenshot() -> None:
+                received = time.monotonic()
+                log.info("Screenshot hotkey received at %.6f", received)
                 if await self._hotkeys_suppressed():
                     return
-                await self._handle_screenshot_hotkey()
+                await self._handle_screenshot_hotkey(received)
 
             self.hotkeys.on(screenshot_key, _screenshot)
 
@@ -1203,15 +1206,15 @@ class ViceDaemon:
             self._discord_current_pid = 0
             self._discord_game_comm = ""
 
-    def _clip_game_tag(self) -> Optional[str]:
-        """Focused game name for clip filename tagging, or None.
+    def _detect_recording_game(self) -> tuple[Optional[str], Optional[str]]:
+        """Snapshot a recognized game name and stable ID for a recording.
 
         Sync (the recorder runs it in a thread, window detection shells
         out to the compositor). Only recognized or confirmed identities
         supply tags; unconfirmed window-title suggestions never do.
 
         Detection always runs so auto playlists work even with filename
-        tagging turned off; the tag itself is only returned when enabled.
+        tagging turned off; filename tagging is applied by the caller.
         """
         game = None
         win = None
@@ -1246,12 +1249,15 @@ class ViceDaemon:
             adapter, (win or {}).get("process"), (win or {}).get("class"),
             game, scanned, candidates,
         )
-        self._last_clip_game = game
-        resolved = self._resolve_game(win) if game and win else None
-        self._last_clip_game_id = resolved['id'] if resolved else None
-        if not getattr(self.cfg.output, "tag_clips_with_game", False):
-            return None
-        return game
+        # Resolve already persisted this identity. Do not inspect the changing
+        # window/process twice or share mutable clip state with screenshots.
+        resolved = win.get('_vice_game_identity') if game and win else None
+        log.debug("Recording game identity: id=%s", resolved['id'] if resolved else None)
+        return game, resolved['id'] if resolved else None
+
+    def _clip_game_tag(self) -> Optional[str]:
+        self._last_clip_game, self._last_clip_game_id = self._detect_recording_game()
+        return self._last_clip_game if self.cfg.output.tag_clips_with_game else None
 
     def _canonical_game_name(self, name):
         from .games import display_name
@@ -1271,6 +1277,7 @@ class ViceDaemon:
     def _match_game(self, win: dict) -> Optional[str]:
         from .games import display_name
         game = self._resolve_game(win)
+        win['_vice_game_identity'] = game
         return display_name(game) if game else None
 
     async def _game_observation_loop(self):
@@ -1278,8 +1285,10 @@ class ViceDaemon:
         while True:
             try:
                 window = await asyncio.to_thread(get_active_window)
-                if window:
-                    await asyncio.to_thread(self._match_game, window)
+                identity = await asyncio.to_thread(self._resolve_game, window) if window else None
+                from .games import display_name
+                self._observed_recording_game = (time.monotonic(), display_name(identity) if identity else None,
+                                                  identity['id'] if identity else None)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -1457,6 +1466,12 @@ class ViceDaemon:
             await self.key_overlay.stop()
         except Exception:
             log.exception("Stopping the keyboard overlay failed")
+        screenshot_tasks = [task for task in [getattr(self, '_screenshot_task', None),
+                            *getattr(self, '_screenshot_background', ())] if task]
+        for task in screenshot_tasks:
+            task.cancel()
+        if screenshot_tasks:
+            await asyncio.gather(*screenshot_tasks, return_exceptions=True)
         game_task = getattr(self, '_game_task', None)
         if game_task:
             game_task.cancel()
@@ -1586,7 +1601,7 @@ class ViceDaemon:
                         "error": self._clip_error_text(),
                     })
 
-    async def _handle_screenshot_hotkey(self) -> None:
+    async def _handle_screenshot_hotkey(self, received=None) -> None:
         """Save a still of the screen and put it on the clipboard (#171).
 
         Deliberately independent of the recorder: gpu-screen-recorder takes the
@@ -1596,37 +1611,91 @@ class ViceDaemon:
         if self._screenshot_task and not self._screenshot_task.done():
             log.info("Screenshot already in progress; ignoring new trigger")
             return
-        self._screenshot_task = asyncio.create_task(self._take_screenshot())
+        received = received if received is not None else time.monotonic()
+        log.info("Screenshot hotkey accepted at %.6f", received)
+        self._screenshot_task = asyncio.create_task(self._take_screenshot(received))
         self._screenshot_task.add_done_callback(self._screenshot_task_done)
 
-    async def _take_screenshot(self) -> None:
+    def _track_screenshot_work(self, coroutine) -> asyncio.Task:
+        tasks = getattr(self, '_screenshot_background', None)
+        if tasks is None:
+            tasks = self._screenshot_background = set()
+        task = asyncio.create_task(coroutine)
+        tasks.add(task)
+        def done(finished):
+            tasks.discard(finished)
+            if not finished.cancelled() and finished.exception():
+                log.error("Screenshot follow-up failed", exc_info=finished.exception())
+        task.add_done_callback(done)
+        return task
+
+    async def _copy_screenshot(self, out, received):
+        lock = getattr(self, '_screenshot_clipboard_lock', None)
+        if lock is None:
+            lock = self._screenshot_clipboard_lock = asyncio.Lock()
+        # Preserve hotkey order even if an older clipboard transfer is slow.
+        async with lock:
+            copied, copy_error = await copy_image_to_clipboard(out)
+        log.info("Screenshot clipboard completed: file=%s elapsed_ms=%.1f copied=%s",
+                 out.name, (time.monotonic() - received) * 1000, copied)
+        if not copied and self.share:
+            log.warning("Screenshot %s could not be copied: %s", out.name, copy_error)
+            await self.share.broadcast({"type":"image_copy_failed", "error":copy_error})
+
+    async def _tag_screenshot(self, out, detected, revision):
+        from .playlists import image_slug
+        from .media import media_revision
+        try:
+            game, gid = await detected
+            # The file may have been renamed, trashed or replaced meanwhile.
+            if self.share and self.share._images.get(out.stem) == out and out.exists() and media_revision(out) == revision:
+                if gid:
+                    self.share.assign_media_game([image_slug(out.stem)], gid)
+                    await self.share._publish_games()
+                    await self.share.broadcast({'type':'image_saved', 'image':self.share._image_basic_json(out.stem, out)})
+        except Exception:
+            log.debug("Screenshot game detection failed", exc_info=True)
+
+    async def _take_screenshot(self, received=None) -> None:
+        from .media import media_revision
         if not self.share:
             log.warning("Screenshot requested before the share server was up")
             return
-        # Same detection the clip path uses, so a screenshot files itself into
-        # the same auto playlist a clip taken at that moment would.
-        game = await asyncio.to_thread(self._clip_game_tag)
-        tag = filename_tag(game) if self.cfg.output.tag_clips_with_game else None
+        received = received if received is not None else time.monotonic()
+        # Start GSR before compositor detection or clipboard work. A recent
+        # observation is a snapshot, never a side effect on replay-clip tags.
+        snapshot = getattr(self, '_observed_recording_game', None)
+        fresh = snapshot and snapshot[2] and time.monotonic() - snapshot[0] <= 6
+        game, gid = snapshot[1:] if fresh else (None, None)
+        tag = filename_tag(game) if game and self.cfg.output.tag_clips_with_game else None
         out = self.share.next_image_path(tag)
+        log.info("Screenshot capture started: file=%s elapsed_ms=%.1f", out.name,
+                 (time.monotonic() - received) * 1000)
+        capture = asyncio.create_task(capture_screenshot(out, self.cfg.recording, self._display_override))
+        detected = None
+        if not fresh:
+            detected = getattr(self, '_screenshot_detection_task', None)
+            if detected is None or detected.done():
+                detected = self._screenshot_detection_task = self._track_screenshot_work(asyncio.to_thread(self._detect_recording_game))
         try:
-            await capture_screenshot(out, self.cfg.recording, self._display_override)
+            await capture
         except RuntimeError as exc:
             click.echo(f"[Vice] Screenshot failed: {exc}", err=True)
-            audio.play_clip_failed(self.cfg.notifications.sound_volume,
-                                   self.cfg.notifications.clip_failed_sound)
-            await self.share.broadcast({"type": "image_error", "error": str(exc)})
+            audio.play_clip_failed(self.cfg.notifications.sound_volume, self.cfg.notifications.clip_failed_sound)
+            await self.share.broadcast({"type":"image_error", "error":str(exc)})
             return
-
+        log.info("Screenshot image written: file=%s elapsed_ms=%.1f", out.name,
+                 (time.monotonic() - received) * 1000)
         click.echo(f"[Vice] Screenshot saved: {out.name}", err=True)
-        audio.play_screenshot(self.cfg.notifications.sound_volume,
-                              self.cfg.notifications.screenshot_sound)
-        self.share.add_image(out, game=self._last_clip_game, game_id=getattr(self, '_last_clip_game_id', None))
-        copied, copy_error = await copy_image_to_clipboard(out)
-        if not copied:
-            # Saved but not copied is worth saying out loud: the user is about
-            # to paste and would otherwise get whatever was there before.
-            log.warning("Screenshot %s could not be copied: %s", out.name, copy_error)
-            await self.share.broadcast({"type": "image_copy_failed", "error": copy_error})
+        audio.play_screenshot(self.cfg.notifications.sound_volume, self.cfg.notifications.screenshot_sound)
+        if detected and detected.done() and not detected.cancelled() and detected.exception() is None:
+            game, gid = detected.result()
+        self.share.add_image(out, game=game, game_id=gid)
+        log.info("Screenshot library registered: file=%s elapsed_ms=%.1f", out.name,
+                 (time.monotonic() - received) * 1000)
+        self._track_screenshot_work(self._copy_screenshot(out, received))
+        if detected and not detected.done():
+            self._track_screenshot_work(self._tag_screenshot(out, detected, media_revision(out)))
 
     def _screenshot_task_done(self, task: asyncio.Task) -> None:
         if self._screenshot_task is task:

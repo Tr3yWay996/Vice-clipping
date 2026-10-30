@@ -1173,3 +1173,7 @@ kbd {
 .viewer-heading h2[role="button"], .trim-head-name[role="button"] { cursor: text; }
 .viewer-heading h2[role="button"]:hover, .trim-head-name[role="button"]:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
 .viewer-heading h2[role="button"]:focus-visible, .trim-head-name[role="button"]:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+
+.player-speed { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--color-text-secondary); flex-wrap: wrap; }
+.player-speed select { font: inherit; color: var(--color-text-primary); background: var(--vice-surface-low); border: 1px solid var(--color-border); border-radius: 8px; padding: 4px; }
+.player-speed-active { color: var(--color-accent); font-variant-numeric: tabular-nums; }

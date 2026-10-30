@@ -45,6 +45,7 @@ export const api = {
   games: async () => (await request<{games:DetectedGame[]}>('/api/games', {cache:'no-store'})).games,
   createGame: (body:unknown) => post<{ok:boolean; id:string}>('/api/games',body),
   editGame: (id:string, body:unknown) => request<{ok:boolean}>(`/api/games/${enc(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
+  assignGame: (id:string, slugs:string[]) => post<{ok:boolean}>(`/api/games/${enc(id)}/assign`,{slugs,confirm:true}),
   gameAction: (id:string, action:string, target?:string) => post<{ok:boolean}>(`/api/games/${enc(id)}/action`,{action,target}),
   uploadGameArtwork: (id:string, file:File) => {
     const form=new FormData();form.append('file',file);

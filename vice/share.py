@@ -31,6 +31,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import time
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -1042,6 +1043,7 @@ def _quick_tunnel_url(line: str) -> Optional[str]:
 
 # ── share server ─────────────────────────────────────────────────────────────
 
+from .games import display_name
 from .game_api import GameLibraryAPI
 from .trash_api import TrashAPI
 
@@ -1196,6 +1198,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         r.add_post('/api/games', self._api_game_create)
         r.add_patch('/api/games/{gid}', self._api_game_edit)
         r.add_post('/api/games/{gid}/action', self._api_game_action)
+        r.add_post('/api/games/{gid}/assign', self._api_game_assign)
         r.add_post('/api/games/{gid}/artwork', self._api_game_artwork)
         r.add_post('/api/games/{gid}/artwork-search', self._api_game_artwork_search)
         r.add_post('/api/games/{gid}/artwork-preview', self._api_game_artwork_preview)
@@ -1346,8 +1349,8 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         else:
             self.games.delete_clip(slug)
         changed = self.playlists.clear_auto_membership(slug, identity['id'] if identity else None)
-        if game and self.cfg.output.auto_playlist_by_game:
-            changed = self.playlists.record_auto(game, slug, game_id=identity['id']) or changed
+        if identity and self.cfg.output.auto_playlist_by_game:
+            changed = self.playlists.record_auto(display_name(identity), slug, game_id=identity['id']) or changed
         if changed:
             asyncio.create_task(self._broadcast_playlists())
         asyncio.create_task(self.broadcast({
@@ -1588,10 +1591,11 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         else:
             self.games.delete_clip(image_slug(slug))
         changed = self.playlists.clear_auto_membership(image_slug(slug), identity['id'] if identity else None)
-        if game and self.cfg.output.auto_playlist_by_game:
-            changed = self.playlists.record_auto(game, image_slug(slug), game_id=identity['id']) or changed
+        if identity and self.cfg.output.auto_playlist_by_game:
+            changed = self.playlists.record_auto(display_name(identity), image_slug(slug), game_id=identity['id']) or changed
         if changed:
             asyncio.create_task(self._broadcast_playlists())
+        asyncio.create_task(self.broadcast({'type':'image_saved', 'image':self._image_basic_json(slug, path)}))
         asyncio.create_task(self._broadcast_image(slug, path))
         return slug
 
@@ -1616,25 +1620,21 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             self._index_restored_media()
 
     async def _broadcast_image(self, slug: str, path: Path) -> None:
+        started = time.monotonic()
         # Thumbnails are what the grid loads. Without one it would pull the
         # full screenshot, which for a 4K library is hundreds of megabytes.
         if not _thumb_path(path).exists():
             await _make_thumb(path)
         if self._images.get(slug) != path or not path.exists():
             return
+        thumb_ready = time.monotonic()
         image = await self._image_json(slug, path)
+        log.info("Screenshot thumbnail/metadata ready: file=%s thumbnail_ms=%.1f metadata_ms=%.1f",
+                 path.name, (thumb_ready - started) * 1000, (time.monotonic() - thumb_ready) * 1000)
         if self._images.get(slug) == path and path.exists():
             await self.broadcast({"type":"image_saved","image":image})
 
     async def _image_json(self, slug: str, path: Path) -> dict:
-        try:
-            st = path.stat()
-            size = st.st_size
-            mtime_ns = st.st_mtime_ns
-            created_at = datetime.fromtimestamp(st.st_mtime).isoformat()
-        except OSError:
-            size, mtime_ns, created_at = 0, 0, ""
-
         # probe_media, never _ffprobe: _ffprobe reads a duration of zero as a
         # damaged container and goes off to attempt a moov remux, which means
         # nothing for a still and would rewrite the user's screenshot.
@@ -1646,6 +1646,15 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         except Exception as exc:
             log.debug("Could not read the dimensions of %s: %s", path.name, exc)
 
+        return dict(self._image_basic_json(slug, path), width=width, height=height)
+
+    def _image_basic_json(self, slug: str, path: Path) -> dict:
+        try:
+            st = path.stat()
+            size, mtime_ns = st.st_size, st.st_mtime_ns
+            created_at = datetime.fromtimestamp(st.st_mtime).isoformat()
+        except OSError:
+            size, mtime_ns, created_at = 0, 0, ''
         enc = quote(slug, safe="")
         rev = f"{size}-{mtime_ns}"
         return {
@@ -1656,8 +1665,8 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             "created_at": created_at,
             "game":       self._game_for(image_slug(slug)),
             "game_id":    self._game_id(image_slug(slug)),
-            "width":      width,
-            "height":     height,
+            "width":      0,
+            "height":     0,
             # Annotating rewrites the file under the same slug, so both URLs
             # carry the file's identity or the window shows the pre-edit copy.
             "image_url":  f"/i/{enc}?v={rev}",

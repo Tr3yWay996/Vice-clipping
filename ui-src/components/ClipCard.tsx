@@ -6,6 +6,7 @@ import {clipTitle, type Clip} from '../lib/types';
 import {H264_SUPPORTED} from '../lib/env';
 import {playbackUrl} from '../lib/playback';
 import {t} from '../lib/i18n';
+import {usePlaybackShortcuts} from '../lib/playbackShortcuts';
 import {InlineRename} from './InlineRename';
 
 /**
@@ -48,6 +49,7 @@ export function ClipCard({
   draggable?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
   const releaseTimer = useRef<number | undefined>(undefined);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [renamingHere, setRenamingHere] = useState(false);
@@ -57,6 +59,13 @@ export function ClipCard({
     setRenamingHere(false);
     actions.onRenameDone?.();
   };
+
+  usePlaybackShortcuts(Boolean(actions.onRename), cardRef, 0, event => {
+    if (event.key !== 'F2' || event.ctrlKey || event.altKey || event.metaKey ||
+        !cardRef.current?.contains(document.activeElement)) return false;
+    if (!event.repeat) setRenamingHere(true);
+    return true;
+  });
 
   const broken = clip.unreadable;
   const canPreview = H264_SUPPORTED && !broken && !previewFailed && Boolean(clip.thumb_url);
@@ -109,6 +118,8 @@ export function ClipCard({
 
   return (
     <article
+      ref={cardRef}
+      tabIndex={0}
       className="clip-card"
       data-broken={broken || undefined}
       draggable={draggable && !renaming}

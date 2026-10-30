@@ -109,3 +109,29 @@ Regression tests live in `tests/test_games.py`, the existing Steam/Discord tests
 `npm run i18n:check` and `npm run build`. FFmpeg/FFprobe enable real artwork and
 media checks; hardware/compositor behavior and actual Discord rendering still
 need a Linux desktop with the corresponding services running.
+
+
+## Assign older recordings explicitly
+
+Open **Settings → Detected Games**, open the recognized game, then choose
+**Assign recordings to this game**. Select individual clips/screenshots (the
+list initially shows only untagged recordings), review their names and the
+chosen game, and confirm. Clear the filter to correct an existing assignment.
+Up to 1,000 selected recordings can be applied in a batch. Nothing is guessed
+from an image or from all untagged recordings.
+
+This changes persistent game IDs and automatic playlist membership only. Custom
+playlists, media bytes, historical timestamps, filenames, public tokens,
+thumbnails, highlights, sidecars and editor source references stay intact.
+Auto playlists are created only when the existing auto-playlist option is on.
+
+Executable rules also check the process comm when Wine exposes a generic loader.
+An exact 15-byte Linux comm truncation can match a longer rule when the full
+executable is unavailable; an ambiguous match remains unclassified. Full
+executable paths, Steam IDs and user overrides retain their existing priority.
+KDE's XWayland visible-window fallback preserves dotted Wine classes instead of
+reducing `RocketLeague.exe` to `exe`. Detection remains independent of Discord.
+Recording diagnostics include the compositor adapter, process/class, match,
+visible-window candidate count and (at debug level) stable game ID. Empty window
+metadata still cannot reliably identify a game; no match is safer than attaching
+a browser or launcher to Rocket League.

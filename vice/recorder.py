@@ -238,6 +238,8 @@ GSR_FLATPAK_PREFIX = ["flatpak", "run", "--command=gpu-screen-recorder", GSR_FLA
 GSR_SOURCES = ("auto", "native", "flatpak")
 # Set from recording.gsr_source by create_recorder.
 _gsr_source_pref = "auto"
+# Last validated monitor targets, also reused by one-shot screenshots.
+_screenshot_targets: dict[tuple, str] = {}
 
 
 def set_gsr_source(pref: str) -> None:
@@ -246,6 +248,7 @@ def set_gsr_source(pref: str) -> None:
     pref = pref if pref in GSR_SOURCES else "auto"
     if pref != _gsr_source_pref:
         _gsr_source_pref = pref
+        _screenshot_targets.clear()
         _gsr_help_text.cache_clear()
         _gsr_supported_codecs.cache_clear()
 
@@ -918,7 +921,11 @@ def _default_gsr_capture_target() -> str:
 
 def _gsr_capture_target(rc, override: Optional[str] = None) -> str:
     selected = _resolve_display_option(rc, "gsr", override)
-    return str(selected["id"]) if selected else _default_gsr_capture_target()
+    target = str(selected["id"]) if selected else _default_gsr_capture_target()
+    if len(_screenshot_targets) >= 16:
+        _screenshot_targets.clear()
+    _screenshot_targets[(_selected_display_id(rc, override), _gsr_source_pref)] = target
+    return target
 
 
 def _gsr_capture_args(
@@ -2053,31 +2060,55 @@ async def capture_screenshot(
     one holding the replay buffer, which is why nothing here touches the
     recorder's state.
     """
+    requested = time.monotonic()
     prefix = _gsr_prefix()
     if prefix is None:
         raise RuntimeError("gpu-screen-recorder is not installed, so screenshots cannot be taken.")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    target_key = (_selected_display_id(rc, override), _gsr_source_pref)
+    # Monitor enumeration can initialize another GSR process. Reuse the target
+    # already validated by recording/settings; resolve cold misses off-loop.
+    target = _screenshot_targets.get(target_key)
+    if target is None:
+        target = await asyncio.to_thread(_gsr_capture_target, rc, override)
+    log.info("Screenshot target resolved: elapsed_ms=%.1f", (time.monotonic() - requested) * 1000)
     cmd = [
         *prefix,
-        "-w", _gsr_capture_target(rc, override),
+        "-w", target,
         "-o", str(out_path),
     ]
     log.debug("Screenshot command: %s", " ".join(cmd))
+    proc = None
+    started = time.monotonic()
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
+        log.info("Screenshot GSR process started: elapsed_ms=%.1f", (time.monotonic() - started) * 1000)
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
+        _screenshot_targets.pop(target_key, None)
+        if proc and proc.returncode is None:
+            proc.kill()
+            await proc.communicate()
+        out_path.unlink(missing_ok=True)
+        if isinstance(exc, asyncio.CancelledError):
+            raise
         raise RuntimeError("gpu-screen-recorder did not return a screenshot in time.")
     except OSError as exc:
+        _screenshot_targets.pop(target_key, None)
+        out_path.unlink(missing_ok=True)
         raise RuntimeError(f"Could not run gpu-screen-recorder: {exc}") from exc
 
+    log.info("Screenshot GSR capture/encode/write completed: elapsed_ms=%.1f status=%s",
+             (time.monotonic() - started) * 1000, proc.returncode)
     text = (stderr or b"").decode(errors="replace")
     if proc.returncode != 0:
+        _screenshot_targets.pop(target_key, None)
+        out_path.unlink(missing_ok=True)
         raise RuntimeError(
             _summarize_process_error("gpu-screen-recorder", proc.returncode, text)
             or "gpu-screen-recorder could not take a screenshot."
@@ -2085,6 +2116,7 @@ async def capture_screenshot(
     # GSR exits 0 having written nothing when the capture target is gone. Left
     # unchecked that reaches the UI as a screenshot the user cannot find.
     if not out_path.exists() or out_path.stat().st_size == 0:
+        _screenshot_targets.pop(target_key, None)
         out_path.unlink(missing_ok=True)
         raise RuntimeError(
             _summarize_process_error("gpu-screen-recorder", proc.returncode, text)

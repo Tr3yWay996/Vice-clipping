@@ -1102,5 +1102,26 @@
       "retention": "Escolha 7, 14, 30 ou 90 dias, ou Nunca.",
       "connection": "Não foi possível carregar a lixeira. Verifique se o serviço Vice está em execução e atualize."
     }
+  },
+  "speed": {
+    "label": "Velocidade ao segurar",
+    "help": "Toque em Espaço para reproduzir ou pausar. Segure para acelerar; ajuste com a roda do mouse. Escolha 2.00× para redefinir."
+  },
+  "assign": {
+    "open": "Associar gravações a este jogo",
+    "title": "Associar a {name}",
+    "help": "Selecione as gravações explicitamente. Só os metadados do jogo e playlists automáticas mudam; arquivos e links de compartilhamento são preservados.",
+    "untagged": "Mostrar apenas sem jogo",
+    "review": "Revisar {count} selecionadas",
+    "confirm": {
+      "one": "Associar {count} gravação",
+      "other": "Associar {count} gravações"
+    },
+    "back": "Voltar",
+    "reviewHelp": {
+      "one": "Associar esta gravação a {name}?",
+      "other": "Associar estas {count} gravações a {name}?"
+    },
+    "empty": "Nenhuma gravação corresponde."
   }
 }

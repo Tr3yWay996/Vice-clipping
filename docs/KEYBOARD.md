@@ -7,7 +7,9 @@ clock.
 
 | Key | Playback action |
 | --- | --- |
-| Space | Play or pause |
+| Space (tap) | Play or pause on release |
+| Space (hold) | Temporary playback boost; wheel adjusts by 0.25× |
+| F2 | Rename the opened/focused clip, or selected editor source |
 | Left / Right | Seek backward / forward 1 second |
 | Shift + Left / Right | Fine seek backward / forward 0.1 seconds |
 | Up / Down | Raise / lower monitoring volume by 5 percentage points |
@@ -33,6 +35,21 @@ Changing it needs no daemon restart and does not affect recording hotkeys.
 Viewer and Quick Trimmer titles now open their existing rename field with one
 click. Enter confirms and Escape cancels; see [Trash and renaming](TRASH.md) for
 playback preservation and delayed Quick Trimmer saves.
+
+Hold Space for 250 ms to start the temporary speed (2× by default). Release
+restores the previous playback rate; a preview that was paused returns to paused.
+The **Hold speed** selector in each player configures/resets the multiplier
+without a mouse wheel, from 0.25× to 4×. It is saved as `ui.playback_boost` through
+the existing configuration API, shared across clips and application restarts.
+Wheel adjustments persist once on release. Blur, hidden windows, typing,
+new dialogs, clip changes and unmounting cancel the hold safely. The editor
+applies speed to its preview clock, video pool and audio monitoring only; export
+and project timing stay unchanged.
+
+F2 uses the same inline rename field as the existing gestures. The Quick Trimmer
+still delays the filesystem rename until it closes. In the library, focus a card
+or one of its controls first. In the editor, focus a library source or select a
+video/audio item; F2 renames that source, never the project or text.
 
 ## Shortcut ownership and accessibility
 

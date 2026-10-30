@@ -35,7 +35,8 @@ export function Modal({
   useEffect(() => {
     if (!open) return;
     returnFocusTo.current = document.activeElement;
-    boxRef.current?.focus();
+    // Preserve a child's autofocus (InlineRename commits on blur).
+    if (!boxRef.current?.contains(document.activeElement)) boxRef.current?.focus();
     return () => {
       (returnFocusTo.current as HTMLElement | null)?.focus?.();
     };

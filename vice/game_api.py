@@ -168,6 +168,48 @@ class GameLibraryAPI:
         await self._publish_games()
         return web.json_response({'ok':True})
 
+    def assign_media_game(self, slugs, gid):
+        """Metadata-only reassignment; media bytes and public identities stay put."""
+        game = self.games.get(gid)
+        if not game or game['status'] not in {'recognized', 'confirmed'}:
+            raise ValueError('target')
+        self.games.associate_many(slugs, gid)
+        for slug in slugs:
+            self.playlists.clear_auto_membership(slug, gid)
+            if self.cfg.output.auto_playlist_by_game:
+                self.playlists.record_auto(display_name(game), slug, game_id=gid)
+        return game
+
+    async def _api_game_assign(self, req):
+        game = self._required_game(req)
+        body = await req.json()
+        if not isinstance(body, dict):
+            return web.json_response({'ok':False, 'code':'selection'}, status=400)
+        slugs = body.get('slugs')
+        if (body.get('confirm') is not True or not isinstance(slugs, list) or not slugs or len(slugs) > 1000 or
+                any(not isinstance(slug, str) for slug in slugs)):
+            return web.json_response({'ok':False, 'code':'selection'}, status=400)
+        slugs = list(dict.fromkeys(slugs))
+        # Validate the entire review before touching any metadata.
+        if any(not (slug[4:] in self._images if slug.startswith('img:') else slug in self._clips) for slug in slugs):
+            raise web.HTTPNotFound()
+        try:
+            self.assign_media_game(slugs, game['id'])
+        except ValueError as exc:
+            return web.json_response({'ok':False, 'code':str(exc)}, status=409)
+        await self._publish_games()
+        for slug in slugs:
+            if slug.startswith('img:'):
+                name = slug[4:]
+                path = self._images.get(name)
+                if path and path.exists():
+                    await self.broadcast({'type':'image_saved', 'image':self._image_basic_json(name, path)})
+            else:
+                path = self._clips.get(slug)
+                if path and path.exists():
+                    await self.broadcast({'type':'clip_saved', 'clip':self._clip_json(slug, path, self._meta.get(slug, {}))})
+        return web.json_response({'ok':True})
+
     async def _api_game_artwork_file(self, req):
         try:
             path = ArtworkStore(self.games.path.parent/'game-artwork').asset_path(req.match_info['asset'])

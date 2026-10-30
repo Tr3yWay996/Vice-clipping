@@ -290,6 +290,7 @@ class UIConfig:
     game_online_lookup: bool = False
     home_side_panel: str = 'queue'
     arrow_key_behavior: str = 'playback'
+    playback_boost: float = 2.0
     # Let Chromium decode clip previews on the GPU. Off by default: hardware
     # decode draws a black rectangle on a lot of Linux GPU and driver
     # combinations, and a laggy preview beats no picture (#140). Worth turning
@@ -298,6 +299,11 @@ class UIConfig:
     hardware_video_decode: bool = False
 
     def __post_init__(self):
+        try:
+            value = float(self.playback_boost)
+            self.playback_boost = round(value * 4) / 4 if 0.25 <= value <= 4 else 2.0
+        except (ValueError, TypeError):
+            self.playback_boost = 2.0
         if self.arrow_key_behavior not in {'playback', 'clips'}:
             self.arrow_key_behavior = 'playback'
         if self.home_side_panel not in {'queue', 'images'}:

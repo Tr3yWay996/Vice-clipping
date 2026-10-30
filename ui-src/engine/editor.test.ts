@@ -8,6 +8,8 @@ const fixture=():EdProject=>({version:1,tracks:[{id:'V1',type:'video',label:'V1'
  {id:'a',kind:'audio',trackId:'A1',clipId:'source',start:5,dur:10,offset:2,volume:.6},
  {id:'next',kind:'clip',trackId:'V1',clipId:'source',start:15,dur:2,offset:0,trans:{fx:'crossfade',len:1}},
 ]});
+const renameSource=vi.fn();
+let boostMultiplier=2;
 let engine:EditorEngine,root:HTMLElement,notify:ReturnType<typeof vi.fn<(title:string,tone?:'accent'|'error')=>void>>;
 const key=(name:string,extra:KeyboardEventInit={},target:Element=document.body)=>{
  const event=new KeyboardEvent('keydown',{key:name,bubbles:true,cancelable:true,...extra});target.dispatchEvent(event);return event;
@@ -18,7 +20,8 @@ beforeEach(async()=>{
  vi.stubGlobal('matchMedia',()=>({matches:true}));
  root=document.createElement('div');root.className='editor';document.body.append(root);
  const nodes=Array.from({length:6},()=>{const el=document.createElement('div');root.append(el);return el;});
- notify=vi.fn();engine=createEditorEngine({clips:()=>[clip],notify,accent:()=> '#0099ff'});await engine.load();
+ notify=vi.fn();renameSource.mockClear();boostMultiplier=2;engine=createEditorEngine({clips:()=>[clip],notify,accent:()=> '#0099ff',renameSource,
+  playbackBoost:()=>({multiplier:()=>boostMultiplier,setMultiplier:rate=>{boostMultiplier=rate;}})});await engine.load();
  engine.mount({stage:nodes[0],stageWrap:nodes[1],timelineCanvas:nodes[2],timelineScroll:nodes[3],libraryScroll:nodes[4],fadeOverlay:nodes[5]});
  engine.select('v');engine.seek(8);
 });
@@ -117,5 +120,24 @@ describe('recoverable source references with unsaved editor changes',()=>{
  it('keeps unsaved edits when source reconciliation cannot reach the daemon',async()=>{
   key('i');const expected=JSON.stringify(engine.project());vi.mocked(fetch).mockRejectedValue(new Error('offline'));
   await expect(engine.onProjectChanged()).resolves.toBeUndefined();expect(JSON.stringify(engine.project())).toBe(expected);expect(engine.isDirty()).toBe(true);
+ });
+});
+
+
+describe('editor playback-only speed and source renaming',()=>{
+ it('boosts video and detached audio without modifying project speed, timing, monitoring or export data',async()=>{
+  const original=JSON.stringify(engine.project());
+  key(' ');await vi.advanceTimersByTimeAsync(260);
+  expect(engine.snapshot().playing).toBe(true);
+  for(const media of root.querySelectorAll<HTMLMediaElement>('video,audio'))expect(media.playbackRate).toBe(2);
+  document.body.dispatchEvent(new KeyboardEvent('keyup',{key:' ',bubbles:true,cancelable:true}));
+  expect(engine.snapshot().playing).toBe(false);
+  for(const media of root.querySelectorAll<HTMLMediaElement>('video,audio'))expect(media.playbackRate).toBe(1);
+  expect(JSON.stringify(engine.project())).toBe(original);expect(engine.snapshot().canUndo).toBe(false);
+ });
+ it('routes F2 to the selected source or focused library card, never the project',()=>{
+  key('F2');expect(renameSource).toHaveBeenCalledExactlyOnceWith(clip);renameSource.mockClear();
+  engine.select(null);const library=root.querySelector<HTMLElement>('.ed-lib-clip')!;library.focus();key('F2');expect(renameSource).toHaveBeenCalledExactlyOnceWith(clip);
+  renameSource.mockClear();const field=document.createElement('input');root.append(field);key('F2',{},field);expect(renameSource).not.toHaveBeenCalled();
  });
 });

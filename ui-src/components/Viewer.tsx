@@ -1,3 +1,4 @@
+import {usePlaybackSpeed, mediaBoost} from './PlaybackSpeed';
 import {useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 
 import {VolumeControl, PlayGlyph, PauseGlyph, PlayPauseButton, PlaybackTime, VideoLoading, usePlaybackAudio} from './PlaybackControls';
@@ -117,6 +118,7 @@ export function Viewer(props: ViewerProps) {
   );
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renamingTitle, setRenamingTitle] = useState(false);
+  const speed = usePlaybackSpeed();
   const {volume, muted, setVolume: applyVolume, toggleMuted} = usePlaybackAudio(videoRef);
   const [expanded, setExpanded] = useState(false);
   const [idle, setIdle] = useState(false);
@@ -357,7 +359,7 @@ export function Viewer(props: ViewerProps) {
       if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return false;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (target?.closest('input, textarea, select') || target?.isContentEditable) return false;
-      if (playbackShortcut(e, {toggle, mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
+      if (playbackShortcut(e, {toggle, rename:() => setRenamingTitle(true), mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
         duration: () => position.duration, seek: at => scrubSeek(at), volume: () => volume,
         setVolume: applyVolume, arrowMode: state.config?.ui?.arrow_key_behavior === 'clips' ? 'clips' : 'playback',
         stepClip: step})) return true;
@@ -372,7 +374,7 @@ export function Viewer(props: ViewerProps) {
         void saveFrame();
       } else return false;
       return true;
-  });
+  }, () => mediaBoost(videoRef, speed.actions), clip?.slug);
 
   if (!mounted || !clip) return null;
 
@@ -747,6 +749,7 @@ export function Viewer(props: ViewerProps) {
             </div>
 
             <footer className="viewer-foot">
+              {speed.control}
               <span className="viewer-shortcuts mono">
                 {t('viewer.shortcuts')}
               </span>

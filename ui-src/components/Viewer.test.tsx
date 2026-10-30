@@ -74,3 +74,24 @@ describe('viewer transport across a confirmed filename change',()=>{
   expect(media().currentTime).toBe(12.5);expect(media().paused).toBe(paused);expect(api.api.markViewed).not.toHaveBeenCalled();
  });
 });
+
+describe('viewer F2 and temporary speed',()=>{
+ it('opens the existing selected inline name on F2, respecting text and modal priority',async()=>{
+  await mount();await key('F2');const input=container.querySelector<HTMLInputElement>('.viewer-rename')!;
+  expect(document.activeElement).toBe(input);expect(input.selectionEnd).toBe(3);expect(media().currentTime).toBe(10);
+  await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+  const modal=document.createElement('div');modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');document.body.append(modal);
+  await key('F2');expect(container.querySelector('.viewer-rename')).toBeNull();modal.remove();
+ });
+ it('boosts while held and restores on release and clip change',async()=>{
+  await mount();vi.useFakeTimers();media().playbackRate=1.5;media().pause();
+  try{
+   await key(' ');await act(async()=>vi.advanceTimersByTime(260));expect(media().playbackRate).toBe(2);expect(media().paused).toBe(false);
+   expect(container.querySelector('output')?.textContent).toBe('2.00×');
+   await act(async()=>document.body.dispatchEvent(new KeyboardEvent('keyup',{key:' ',bubbles:true,cancelable:true})));
+   expect(media().playbackRate).toBe(1.5);expect(media().paused).toBe(true);expect(container.querySelector('output')).toBeNull();
+   await key(' ');await act(async()=>vi.advanceTimersByTime(260));
+   await renderViewer({...clip,slug:'two',video_url:'/v/two?v=2'});expect(media().playbackRate).toBe(1.5);
+  }finally{vi.useRealTimers();}
+ });
+});
