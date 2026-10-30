@@ -27,6 +27,7 @@ export interface Draft {
   followMouse: boolean;
   windowCapture: boolean;
   hardwareDecode: boolean;
+  homeSidePanel: string;
 
   captureAudio: boolean;
   captureMic: boolean;
@@ -134,6 +135,7 @@ export function draftFromConfig(config: Config): Draft {
     followMouse: Boolean(r.follow_mouse_display),
     windowCapture: Boolean(r.window_capture),
     hardwareDecode: Boolean(ui.hardware_video_decode),
+    homeSidePanel: ui.home_side_panel === 'images' ? 'images' : 'queue',
 
     captureAudio: r.capture_audio !== false,
     captureMic: Boolean(r.capture_microphone),
@@ -289,7 +291,7 @@ export function patchFromDraft(draft: Draft): Record<string, Record<string, unkn
         SOUND_FIELDS.map(([key]) => [key, draft.sounds[key]?.trim() || null]),
       ),
     },
-    ui: {hardware_video_decode: draft.hardwareDecode},
+    ui: {hardware_video_decode: draft.hardwareDecode, home_side_panel: draft.homeSidePanel},
     discord: {
       enabled: draft.discordEnabled,
       game_icons: draft.discordGameIcons,

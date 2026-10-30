@@ -9,6 +9,7 @@ import {ED_FONTS, ED_SWATCHES, edFmt} from '../engine/editorConstants';
 import type {EdSnapshot, EdTab} from '../engine/editorTypes';
 import {Modal} from '../components/Modal';
 import {IconClose} from '../components/Icons';
+import {LiquidProgress} from '../components/ProcessingQueuePanel';
 import {Select, TextField, Toggle} from '../components/settings/Fields';
 import {t} from '../lib/i18n';
 
@@ -459,6 +460,21 @@ function ExportModal({
   const [progress, setProgress] = useState(0);
   const [donePath, setDonePath] = useState('');
   const jobRef = useRef<string | null>(null);
+  const {state} = useStore();
+  const queuedJob = state.jobs.find(job => job.id === jobRef.current);
+
+  // The durable snapshot also covers an export finishing before its POST
+  // response, or while the socket was disconnected.
+  useEffect(() => {
+    if (!open || phase !== 'busy' || !queuedJob) return;
+    if (queuedJob.status === 'completed') {
+      setDonePath(queuedJob.result_path ?? '');
+      setPhase('done');
+    } else if (['failed', 'cancelled', 'interrupted'].includes(queuedJob.status)) {
+      setPhase('form');
+      notify({kind:'error', title:t('editor.exportFailed'), detail:queuedJob.error ?? t(`queue.state.${queuedJob.status}`), tone:'error', holdMs:7000});
+    }
+  }, [open, phase, queuedJob, notify]);
 
   useEffect(() => {
     if (!open) return;
@@ -556,8 +572,7 @@ function ExportModal({
       title={t('editor.exportVideo')}
       wide
       onClose={() => {
-        // A render in flight is the daemon's job now; closing would orphan it.
-        if (phase !== 'busy') onClose();
+        onClose();
       }}
       footer={
         phase === 'form' ? (
@@ -570,20 +585,25 @@ function ExportModal({
             </button>
           </>
         ) : phase === 'busy' ? (
+          <>
+          <button type="button" className="btn" onClick={onClose}>{t('queue.continueBackground')}</button>
           <button
             type="button"
             className="btn btn-quiet"
+            disabled={queuedJob?.stage === 'saving'}
             onClick={() => {
               if (jobRef.current) void api.cancelExport(jobRef.current).catch(() => {});
             }}>
             {t('editor.cancelExport')}
           </button>
+          </>
         ) : (
           <button type="button" className="btn" onClick={onClose}>
             {t('editor.done')}
           </button>
         )
       }>
+      {phase === 'busy' ? <button type="button" className="btn btn-quiet btn-sm" onClick={onClose}>{t('queue.continueBackground')}</button> : null}
       {phase === 'form' ? (
         <>
           <label className="ed-export-field">
@@ -649,18 +669,19 @@ function ExportModal({
           <p className="ed-export-summary mono">{summary}</p>
           {recording ? (
             <p className="ed-export-warn">
-              Vice is recording right now. Exporting will compete with the encoder for the GPU, so
-              expect the game to stutter.
+              {t('editor.recordingCompetition')}
             </p>
           ) : null}
         </>
       ) : phase === 'busy' ? (
         <>
-          <p>{t('editor.encoding')}</p>
+          <p>{queuedJob ? t(`queue.state.${queuedJob.status}`) : t('queue.loading')}</p>
+          {queuedJob ? <LiquidProgress job={queuedJob}/> : <>
           <div className="ed-progress">
             <div className="ed-progress-fill" style={{width: `${progress}%`}} />
           </div>
           <p className="mono ed-progress-label">{t('editor.encodingProgress', {percent: progress})}</p>
+          </>}
         </>
       ) : (
         <>

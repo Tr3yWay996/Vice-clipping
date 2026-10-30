@@ -669,7 +669,8 @@
     "exportSummary": "{seconds}s · {format} vers {path}",
     "exportFormatDiscord": "Optimisé pour Discord (moins de 20 Mo)",
     "exportFormatDefault": "H.264 and AAC",
-    "exportFolderUnpicked": "un dossier de ton choix"
+    "exportFolderUnpicked": "un dossier de ton choix",
+    "recordingCompetition": "Un enregistrement est en cours. L’exportation utilise le même GPU et peut affecter les performances du jeu."
   },
   "settings": {
     "title": "Réglages",
@@ -886,7 +887,9 @@
     "discordGameIcons": "Afficher l'icône du jeu",
     "discordGameIconsHelp": "Affiche l'icône Discord du jeu sur ton profil, avec le logo de Vice comme petit badge. Vice recherche le jeu dans la liste publique des jeux détectables de Discord et met le résultat en cache. Si l'option est désactivée ou si la recherche échoue, le logo Vice classique est affiché.",
     "shareDiscordFile": "Partager copie un fichier Discord",
-    "shareDiscordFileHelp": "Activé : le bouton Partager copie directement le clip, réduit pour respecter la limite d'envoi gratuite de Discord, prêt à être collé dans un message. Désactivé : il copie le lien de partage. Fais un clic droit sur Partager pour utiliser l'autre option dans tous les cas."
+    "shareDiscordFileHelp": "Activé : le bouton Partager copie directement le clip, réduit pour respecter la limite d'envoi gratuite de Discord, prêt à être collé dans un message. Désactivé : il copie le lien de partage. Fais un clic droit sur Partager pour utiliser l'autre option dans tous les cas.",
+    "homeSidePanel": "Panneau latéral de l’accueil",
+    "homeSidePanelHelp": "Choisissez le panneau à côté des clips récents. Le changement est immédiat."
   },
   "whatsNew": {
     "title": "Nouveautés de Vice {version}",
@@ -914,5 +917,71 @@
         "body": "Vice est maintenant disponible en français et en portugais brésilien. Choisis une langue dans Réglages > Apparence."
       }
     }
+  },
+  "queue": {
+    "title": "File de traitement",
+    "loading": "Chargement de l’historique…",
+    "emptyTitle": "Prête pour vos prochains clips",
+    "emptyHelp": "Les découpages, exports et fichiers préparés pour le partage s’affichent ici.",
+    "backgroundHelp": "Le traitement continue lorsque vous réduisez ou fermez l’interface. Quitter le service interrompt les tâches actives.",
+    "submitted": "Ajouté à la file de traitement",
+    "continueBackground": "Continuer en arrière-plan",
+    "progress": "Progression du traitement",
+    "indeterminate": "Traitement en cours…",
+    "controlFailed": "Impossible de modifier la tâche",
+    "pauseUnavailable": "La pause est disponible pendant l’exécution de FFmpeg. La préparation et l’enregistrement final ne peuvent pas être mis en pause.",
+    "elapsed": "Durée écoulée : {time}",
+    "remaining": "Environ {time} restantes",
+    "speed": "Vitesse : {speed}×",
+    "errorDetails": "Détails de l’erreur",
+    "pause": "Pause",
+    "resume": "Reprendre",
+    "cancel": "Annuler",
+    "retry": "Réessayer",
+    "remove": "Retirer",
+    "open": "Ouvrir la vidéo",
+    "reveal": "Afficher dans le dossier",
+    "activeCount": {
+      "one": "{count} tâche active",
+      "other": "{count} tâches actives"
+    },
+    "queuedCount": {
+      "one": "{count} tâche en attente",
+      "other": "{count} tâches en attente"
+    },
+    "operation": {
+      "trim": "Découpage",
+      "export": "Export de l’éditeur",
+      "prepare": "Préparation du partage"
+    },
+    "state": {
+      "queued": "En attente",
+      "processing": "En cours",
+      "paused": "En pause",
+      "completed": "Terminée",
+      "failed": "Échec",
+      "cancelled": "Annulée",
+      "interrupted": "Interrompue"
+    },
+    "stage": {
+      "queued": "En attente",
+      "preparing": "Préparation",
+      "copy": "Copie des flux",
+      "encode": "Encodage",
+      "render": "Rendu",
+      "saving": "Enregistrement",
+      "completed": "Terminée",
+      "failed": "Échec",
+      "stopped": "Arrêtée",
+      "validating": "Vérification du résultat"
+    },
+    "showMore": {
+      "one": "Afficher {count} autre tâche",
+      "other": "Afficher {count} autres tâches"
+    }
+  },
+  "drag": {
+    "unavailable": "Glisser-déposer de fichier indisponible",
+    "fallback": "Utilisez Copier le fichier ou le menu Partager. Certaines applications isolées ne peuvent pas recevoir de fichiers locaux."
   }
 }

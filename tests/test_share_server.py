@@ -1864,6 +1864,7 @@ class EditorApiTests(unittest.IsolatedAsyncioTestCase):
             return self.thumb_path
 
         self.patchers = [
+            mock.patch("vice.jobs.JOBS_PATH", root / "jobs.json"),
             mock.patch("vice.share._local_ip", return_value="127.0.0.1"),
             mock.patch("vice.share.THUMB_DIR", root / "thumbs"),
             mock.patch("vice.share.HIGHLIGHTS_DIR", root / "highlights"),
@@ -2033,6 +2034,35 @@ class EditorApiTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.post(
                 f"{self.base}/api/editor/export/exp-nope/cancel") as resp:
             self.assertEqual(resp.status, 404)
+
+    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg not installed')
+    async def test_background_exports_finish_in_order_without_a_connected_interface(self):
+        self._make_clip('Vice_Clip_1.mp4')
+        project = self._project([{'id':'i1','kind':'clip','trackId':'V1','clipId':'Vice_Clip_1',
+                                 'start':0,'dur':1,'offset':0}])
+        await self.server._proxy_lock.acquire()
+        ws = await self.client.ws_connect(f'ws://127.0.0.1:{self.local_port}/ws')
+        ids = []
+        try:
+            for filename in ['queued-one', 'queued-two']:
+                async with self.client.post(f'{self.base}/api/editor/export', json={
+                        'project':project,'filename':filename,'background':True}) as response:
+                    result = await response.json()
+                    self.assertTrue(result['ok'], result)
+                    ids.append(result['job_id'])
+            self.assertEqual([job['status'] for job in self.server._jobs.jobs], ['queued', 'queued'])
+            await ws.close()
+        finally:
+            self.server._proxy_lock.release()
+        results = [await asyncio.wait_for(self.server._jobs.wait(jid), 30) for jid in ids]
+        self.assertEqual([job['status'] for job in results], ['completed', 'completed'], results)
+        self.assertLessEqual(results[0]['finished_at'], results[1]['started_at'])
+        for job in results:
+            self.assertTrue(Path(job['result_path']).is_file())
+            self.assertIn(Path(job['result_path']).stem, self.server._clips)
+        async with self.client.get(f'{self.base}/api/jobs') as response:
+            restored = (await response.json())['jobs']
+        self.assertEqual([job['status'] for job in restored], ['completed', 'completed'])
 
     @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"),
                          "ffmpeg not installed")

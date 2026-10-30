@@ -9,7 +9,7 @@ import {StoreProvider, useStore} from './store';
 
 vi.mock('../lib/api', () => ({
   api: {
-    status: vi.fn(),
+    jobs: vi.fn(), jobControl: vi.fn(), status: vi.fn(),
     getConfig: vi.fn(),
     clips: vi.fn(),
     images: vi.fn(),
@@ -87,6 +87,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   localStorage.clear();
+  vi.mocked(api.jobs).mockResolvedValue([]);
   vi.mocked(api.getConfig).mockResolvedValue(config);
   vi.mocked(api.clips).mockResolvedValue([]);
   vi.mocked(api.images).mockResolvedValue([]);
@@ -253,5 +254,27 @@ describe('authoritative homepage public-link status', () => {
     await flush(() => lifecycle.onOpen?.());
     expect(store.state.sessionStartedAt).toBe(started);
     expect(disconnect).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('processing queue snapshots', () => {
+  it('recovers jobs after reconnect and ignores snapshots older than a job event', async () => {
+    const old = deferred<import('../lib/types').ProcessingJob[]>();
+    vi.mocked(api.jobs).mockReturnValueOnce(old.promise).mockResolvedValue([]);
+    await mount();
+    const job = {id:'job', name:'clip', status:'processing', operation:'trim', progress:.4, can_pause:true, stage:'encode'} as import('../lib/types').ProcessingJob;
+    await emit({type:'jobs_changed',jobs:[job]});
+    await flush(()=>old.resolve([]));
+    expect(store.state.jobs).toHaveLength(1);expect(store.state.jobs[0].progress).toBe(.4);
+    vi.mocked(api.jobs).mockResolvedValue([{...job,status:'completed',progress:1}]);
+    await flush(()=>lifecycle.onClose?.());await flush(()=>lifecycle.onOpen?.());
+    expect(store.state.jobs[0].status).toBe('completed');
+  });
+
+  it('defaults to the queue and switches to Images without restarting status or jobs', async () => {
+    await mount();expect(container.querySelector('.processing-queue')).not.toBeNull();
+    await act(async()=>{await store.saveConfig({ui:{home_side_panel:'images'}});});
+    expect(container.querySelector('.processing-queue')).toBeNull();
+    expect(api.saveConfig).toHaveBeenCalledWith({ui:{home_side_panel:'images'}});
   });
 });

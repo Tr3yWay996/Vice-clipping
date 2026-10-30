@@ -1,4 +1,5 @@
-import type {Clip, Config, Highlight, Image, Playlist, Status} from './types';
+import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob} from './types';
+import {t} from './i18n';
 import type {KeyframeInfo} from './trimming';
 
 /**
@@ -37,6 +38,10 @@ const post = <T>(path: string, body?: unknown) =>
 const enc = (segment: string) => encodeURIComponent(segment);
 
 export const api = {
+  jobs: async () => (await request<{jobs: ProcessingJob[]}>('/api/jobs', {cache: 'no-store'})).jobs,
+  jobControl: (id: string, action: string) => post<{ok: boolean}>(`/api/jobs/${enc(id)}/${enc(action)}`),
+  originalFile: (slug: string, prepared = false) => request<{path: string; uri: string; filename: string; size: number}>(`/api/clips/${enc(slug)}/file${prepared ? "?prepared=1" : ""}`, {cache: 'no-store'}),
+  prepareClip: (slug: string) => post<{job_id: string}>(`/api/clips/${enc(slug)}/prepare`),
   status: () => request<Status>('/api/status', {cache: 'no-store'}),
 
   getConfig: () => request<Config>('/api/config'),
@@ -92,9 +97,9 @@ export const api = {
       `/api/clips/${enc(slug)}/discord`,
     ),
   /** With `copy` the selection becomes a new clip and the original is kept. */
-  trimClip: async (slug: string, start: number, end: number, copy = false) => {
-    const result = await post<{ok?: boolean; error?: string; slug: string; copy?: boolean}>(`/api/clips/${enc(slug)}/trim`, {start, end, copy});
-    if (result.ok === false) throw new Error(result.error || 'Trim failed');
+  trimClip: async (slug: string, start: number, end: number, copy = false, name?: string) => {
+    const result = await post<{ok?: boolean; error?: string; slug: string; copy?: boolean; job_id?: string}>(`/api/clips/${enc(slug)}/trim`, {start, end, copy, name, background: true});
+    if (result.ok === false) throw new Error(result.error || t('trim.failed'));
     return result;
   },
   keyframes: (slug: string, signal?: AbortSignal) =>
@@ -174,7 +179,7 @@ export const api = {
 
   editorProject: () => request<unknown>('/api/editor/project'),
   saveEditorProject: (project: unknown) => post<unknown>('/api/editor/project', project),
-  startExport: (body: unknown) => post<{job_id: string}>('/api/editor/export', body),
+  startExport: (body: unknown) => post<{job_id: string}>('/api/editor/export', {...(body as Record<string, unknown>), background: true}),
   cancelExport: (jobId: string) => post<void>(`/api/editor/export/${enc(jobId)}/cancel`),
 
   checkUpdate: () => post<unknown>('/api/update/check'),

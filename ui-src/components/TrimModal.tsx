@@ -340,7 +340,13 @@ export function TrimModal({
     setError(null);
     setConfirmReplace(false);
     try {
-      const result = await api.trimClip(clip.slug, selection.start, selection.end, copy);
+      const result = await api.trimClip(clip.slug, selection.start, selection.end, copy, pendingName ?? undefined);
+      if (result.job_id) {
+        setPendingName(null);
+        notify(t('queue.submitted'), clipTitle(clip), 'accent');
+        onClose();
+        return;
+      }
       const name = pendingName && pendingName !== clipTitle(clip) ? pendingName : null;
       setPendingName(null);
       // A name typed while saving a copy belongs to the copy: the original is

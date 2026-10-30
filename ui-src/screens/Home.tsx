@@ -3,6 +3,7 @@ import {useMemo, useState} from 'react';
 import {useStore} from '../state/store';
 import {useClipActions} from '../state/clipActions';
 import {useHomeLayout} from '../components/AppFrame';
+import {ProcessingQueuePanel} from '../components/ProcessingQueuePanel';
 import {HomeImages} from '../components/HomeImages';
 import {OverlayPortal} from '../components/OverlayPortal';
 import {usePlaylistDropTarget} from '../lib/clipDrag';
@@ -408,7 +409,7 @@ export function Home() {
         </Modal>
       </OverlayPortal>
     </div>
-        <HomeImages />
+        {config?.ui?.home_side_panel === 'images' ? <HomeImages /> : <ProcessingQueuePanel />}
         {layout === 'rail' ? (
           <aside className="home-rail" aria-label={t('home.quickSettings')}>
             <h2>{t('home.quickSettings')}</h2>
