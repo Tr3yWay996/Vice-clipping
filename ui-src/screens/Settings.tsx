@@ -1128,6 +1128,15 @@ export function Settings() {
 
         {/* ── Appearance ────────────────────────────────────────── */}
         <Card id="appearance" title={t('settings.secAppearance')} register={register('appearance')}>
+          <Row label={t('settings.arrowKeyBehavior')} help={t('settings.arrowKeyBehaviorHelp')}>
+            <Select label={t('settings.arrowKeyBehavior')} value={draft.arrowKeyBehavior}
+              onChange={value => {
+                update({arrowKeyBehavior: value});
+                void saveConfig({ui: {arrow_key_behavior: value}}).catch(error =>
+                  notify({kind:'error', title:t('settings.errSave'), detail:error.message, tone:'error', holdMs:6000}));
+              }}
+              options={[["playback", t('settings.arrowPlayback')], ["clips", t('settings.arrowClips')]]}/>
+          </Row>
           <Row label={t('settings.homeSidePanel')} help={t('settings.homeSidePanelHelp')}>
             <Select label={t('settings.homeSidePanel')} value={String(config?.ui?.home_side_panel ?? 'queue')}
               onChange={value => {

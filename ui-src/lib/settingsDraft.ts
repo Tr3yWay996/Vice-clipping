@@ -28,6 +28,7 @@ export interface Draft {
   windowCapture: boolean;
   hardwareDecode: boolean;
   homeSidePanel: string;
+  arrowKeyBehavior: string;
 
   captureAudio: boolean;
   captureMic: boolean;
@@ -136,6 +137,7 @@ export function draftFromConfig(config: Config): Draft {
     windowCapture: Boolean(r.window_capture),
     hardwareDecode: Boolean(ui.hardware_video_decode),
     homeSidePanel: ui.home_side_panel === 'images' ? 'images' : 'queue',
+    arrowKeyBehavior: ui.arrow_key_behavior === 'clips' ? 'clips' : 'playback',
 
     captureAudio: r.capture_audio !== false,
     captureMic: Boolean(r.capture_microphone),
@@ -291,7 +293,8 @@ export function patchFromDraft(draft: Draft): Record<string, Record<string, unkn
         SOUND_FIELDS.map(([key]) => [key, draft.sounds[key]?.trim() || null]),
       ),
     },
-    ui: {hardware_video_decode: draft.hardwareDecode, home_side_panel: draft.homeSidePanel},
+    ui: {hardware_video_decode: draft.hardwareDecode, home_side_panel: draft.homeSidePanel,
+      arrow_key_behavior: draft.arrowKeyBehavior},
     discord: {
       enabled: draft.discordEnabled,
       game_icons: draft.discordGameIcons,

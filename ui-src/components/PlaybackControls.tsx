@@ -90,11 +90,11 @@ const SpeakerGlyph = ({level}: {level: number}) => (
   </svg>
 );
 
-export function usePlaybackAudio(ref: RefObject<HTMLVideoElement | null>) {
+export function usePlaybackAudio(ref?: RefObject<HTMLVideoElement | null>) {
   const volume = useSyncExternalStore(subscribeAudio, storedVolume, () => 1);
   const muted = useSyncExternalStore(subscribeAudio, storedMuted, () => false);
   useEffect(() => {
-    const video = ref.current;
+    const video = ref?.current;
     if (video) {video.volume = volume; video.muted = muted;}
   });
   const setVolume = useCallback((level: number) => {

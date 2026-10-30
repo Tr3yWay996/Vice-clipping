@@ -113,7 +113,7 @@ describe('unified trimming timeline', () => {
     await click(container.querySelector('[aria-label="Pause"]')!);
     expect(video().paused).toBe(true);
   });
-  it('Shift-clicks move the nearest boundary and seek precisely', async () => {
+  it('Shift-clicks move the nearest boundary without seeking', async () => {
     await mount();
     await boundaryClick(10);
     await boundaryClick(50);
@@ -121,8 +121,8 @@ describe('unified trimming timeline', () => {
     await boundaryClick(45);
     expect(value(startHandle())).toBe(15);
     expect(value(endHandle())).toBe(45);
-    expect(video().currentTime).toBe(45);
-    expect(value(container.querySelector('.trim-seek')!)).toBe(45);
+    expect(video().currentTime).toBe(0);
+    expect(value(container.querySelector('.trim-seek')!)).toBe(0);
   });
   it('background drags scrub without changing either boundary in both modes', async () => {
     await mount();
@@ -153,7 +153,7 @@ describe('unified trimming timeline', () => {
     await click(checkbox());
     await boundaryClick(15);
     expect(value(startHandle())).toBe(11);
-    expect(video().currentTime).toBe(11);
+    expect(video().currentTime).toBe(0);
     const markers = container.querySelectorAll<HTMLElement>('.trim-keyframe');
     expect(markers.length).toBe(6);
     expect(parseFloat(markers[2].style.left)).toBeCloseTo((22 / 60) * 100);
@@ -173,7 +173,7 @@ describe('unified trimming timeline', () => {
     await click(button('Snap selection to keyframes'));
     expect(value(startHandle())).toBe(11);
     expect(value(endHandle())).toBe(39);
-    expect(video().currentTime).toBe(11);
+    expect(video().currentTime).toBe(0);
     expect(checkbox().checked).toBe(false);
     await boundaryClick(15);
     expect(value(startHandle())).toBe(15);
@@ -191,7 +191,7 @@ describe('unified trimming timeline', () => {
   it('statistics are collapsed initially and display counts, estimates, intervals and rates', async () => {
     vi.mocked(api.keyframes).mockResolvedValue({...info, frames_estimated: true});
     await mount();
-    const details = container.querySelector('details')!;
+    const details = container.querySelector<HTMLDetailsElement>('details:not(.playback-shortcuts)')!;
     expect(details.open).toBe(false);
     await click(details.querySelector('summary')!);
     expect(details.open).toBe(true);
@@ -206,7 +206,7 @@ describe('unified trimming timeline', () => {
   it('translates keyframe controls and formats French statistics with decimal commas', async () => {
     setLocale('fr');
     await mount();
-    const details = container.querySelector('details')!;
+    const details = container.querySelector<HTMLDetailsElement>('details:not(.playback-shortcuts)')!;
     await click(details.querySelector('summary')!);
     expect(details.textContent).toContain('Informations sur les images clés');
     expect(details.textContent).toContain('Toutes les 11,800 secondes');
@@ -218,9 +218,9 @@ describe('unified trimming timeline', () => {
     await mount();
     expect(container.querySelector('.trim-hl')?.getAttribute('title')).toBe('Win');
     await key(container.querySelector('.trim-seek')!, 'ArrowRight');
-    expect(video().currentTime).toBe(0.1);
+    expect(video().currentTime).toBe(1);
     await key(startHandle(), 'ArrowRight');
-    expect(value(startHandle())).toBe(0.1);
+    expect(value(startHandle())).toBe(1);
     await click(checkbox());
     await key(startHandle(), 'ArrowRight');
     expect(value(startHandle())).toBe(11);
@@ -230,6 +230,69 @@ describe('unified trimming timeline', () => {
     expect(video().currentTime).toBe(11);
     await key(timeline(), 'Escape');
     expect(close).toHaveBeenCalledTimes(1);
+  });
+  it('handles document-level Space, seek, mute and I/O after ordinary pointer interactions', async () => {
+    await mount();
+    await key(document.body, ' ');
+    expect(video().paused).toBe(false);
+    await click(container.querySelector('.trim-readout')!);
+    await key(document.body, ' ');
+    expect(video().paused).toBe(true);
+    video().currentTime = 15;
+    await key(document.body, 'i');
+    expect(value(startHandle())).toBe(15);
+    expect(value(endHandle())).toBe(60);
+    expect(video().currentTime).toBe(15);
+    await key(document.body, 'ArrowRight');
+    expect(video().currentTime).toBe(16);
+    video().currentTime = 45;
+    await key(document.body, 'o');
+    expect(value(endHandle())).toBe(45);
+    expect(video().currentTime).toBe(45);
+    video().currentTime = 44.8;
+    await key(document.body, 'i');
+    expect(value(startHandle())).toBe(15);
+    expect(value(endHandle())).toBe(45);
+    expect(video().currentTime).toBe(44.8);
+    expect(container.querySelector('[role=status]')?.textContent).toContain('at least');
+    await key(document.body, 'Home');expect(video().currentTime).toBe(0);
+    await key(document.body, 'End');expect(video().currentTime).toBe(60);
+    await key(document.body, 'm');expect(video().muted).toBe(true);
+    await key(document.body, 'm');expect(video().muted).toBe(false);
+  });
+  it('keeps a paused reference frame and playing state through every boundary edit', async () => {
+    await mount();video().currentTime = 30;
+    await act(async()=>video().dispatchEvent(new Event('timeupdate')));
+    await boundaryClick(10);await boundaryClick(50);
+    await pointer(startHandle(), 'pointerdown', 100);
+    await pointer(startHandle(), 'pointermove', 250);
+    await pointer(startHandle(), 'pointerup', 250);
+    expect(video().currentTime).toBe(30);expect(video().paused).toBe(true);
+    expect(value(startHandle())).toBe(15);expect(value(endHandle())).toBe(50);
+    await key(startHandle(), 'ArrowLeft');expect(video().currentTime).toBe(30);
+    await click(checkbox());await click(button('Snap selection to keyframes'));
+    expect(video().currentTime).toBe(30);
+    await key(document.body, ' ');expect(video().paused).toBe(false);
+    await key(document.body, 'i');expect(value(startHandle())).toBe(22);
+    await key(document.body, 'o');expect(value(endHandle())).toBe(39);
+    expect(video().currentTime).toBe(30);expect(video().paused).toBe(false);
+    await boundaryClick(15);expect(video().currentTime).toBe(30);expect(video().paused).toBe(false);
+    await click(button('Snap selection to keyframes'));expect(video().currentTime).toBe(30);expect(video().paused).toBe(false);
+  });
+  it('keeps native input keys and ignores shortcuts behind another dialog or after closing', async () => {
+    await mount();
+    const input=document.createElement('input');container.querySelector('.trim-modal')!.append(input);
+    await key(input,' ');await key(input,'i');expect(video().paused).toBe(true);expect(value(startHandle())).toBe(0);
+    const dialog=document.createElement('div');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');document.body.append(dialog);
+    try{await key(document.body,' ');expect(video().paused).toBe(true);}finally{dialog.remove();}
+    const media=video();await act(async()=>root.render(<div/>));
+    await key(document.body,' ');expect(media.paused).toBe(true);
+  });
+  it('supports short clips and rejects crossed I/O without changing the partner', async () => {
+    await mount();Object.defineProperty(video(),'duration',{value:.2,configurable:true});
+    await act(async()=>video().dispatchEvent(new Event('loadedmetadata')));
+    video().currentTime=.1;await key(document.body,'i');await key(document.body,'o');
+    expect(value(startHandle())).toBe(0);expect(value(endHandle())).toBe(.2);expect(video().currentTime).toBe(.1);
   });
   it('failed analysis leaves ordinary trimming usable and communicates failure', async () => {
     vi.mocked(api.keyframes).mockRejectedValue(new Error('missing ffprobe'));

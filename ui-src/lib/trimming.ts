@@ -2,6 +2,17 @@
 export const MIN_SELECTION = 0.5;
 export type Selection = {start: number; end: number};
 export type Boundary = keyof Selection;
+
+/** I/O rejects an invalid request instead of clamping it or moving its partner. */
+export function boundaryAtPlayhead(selection: Selection, boundary: Boundary, at: number, total: number,
+  keys?: number[]): Selection | null {
+  const minimum = Math.min(MIN_SELECTION, total);
+  const min = boundary === 'start' ? 0 : selection.start + minimum;
+  const max = boundary === 'start' ? selection.end - minimum : total;
+  if (!Number.isFinite(at) || at < min || at > max || total <= 0) return null;
+  const next = keys ? nearestKeyframe(keys, at, min, max) : at;
+  return next === null ? null : {...selection, [boundary]: next};
+}
 export interface KeyframeInfo {
   timestamps: number[];
   total_keyframes: number;

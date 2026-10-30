@@ -367,7 +367,14 @@
     "intervalSeconds": "Toutes les {seconds} secondes",
     "fpsValue": "{average} i/s en moyenne · {nominal} nominales",
     "keyframeHelp": "L’affichage des images clés active aussi l’aimantation des poignées. Les intervalles utilisent les horodatages réels ; le nombre d’images peut être estimé pour une fréquence variable. L’alignement favorise la copie directe, mais Vice vérifie toujours le résultat et réencode si nécessaire.",
-    "timelineHint": "Cliquer pour naviguer · Maj + clic pour déplacer la limite la plus proche"
+    "timelineHint": "Cliquer ou glisser pour naviguer · Maj + clic ou glisser une poignée pour modifier les limites sans déplacer la lecture",
+    "shortcutHelp": "I : placer le début · O : placer la fin à la position de lecture. Modifier ou aimanter les limites ne déplace pas la lecture et ne change pas son état. L’aperçu démarre au début et lit la sélection en boucle.",
+    "invalidBoundary": "Le début doit précéder la fin et la sélection doit durer au moins {duration}.",
+    "saveCopy": "Enregistrer un nouveau clip",
+    "savedCopy": "Nouveau clip enregistré",
+    "replaceOriginal": "Remplacer l’original",
+    "replaceConfirm": "Confirmer le remplacement",
+    "replaceWarning": "Tout ce qui se trouve hors de la sélection sera supprimé de l’original."
   },
   "images": {
     "heading": "Images",
@@ -670,7 +677,9 @@
     "exportFormatDiscord": "Optimisé pour Discord (moins de 20 Mo)",
     "exportFormatDefault": "H.264 and AAC",
     "exportFolderUnpicked": "un dossier de ton choix",
-    "recordingCompetition": "Un enregistrement est en cours. L’exportation utilise le même GPU et peut affecter les performances du jeu."
+    "recordingCompetition": "Un enregistrement est en cours. L’exportation utilise le même GPU et peut affecter les performances du jeu.",
+    "invalidTrimContext": "Sélectionne une vidéo et place la lecture à une coupe valide dans ce clip. Un audio détaché déjà modifié doit être découpé séparément.",
+    "shortcutHelp": "Sélectionne une vidéo, puis appuie sur I/O pour placer son début ou sa fin à la lecture. L’audio détaché correspondant suit la coupe. Aucun décalage des autres clips ; annuler/rétablir restaure toute la modification."
   },
   "settings": {
     "title": "Réglages",
@@ -889,7 +898,11 @@
     "shareDiscordFile": "Partager copie un fichier Discord",
     "shareDiscordFileHelp": "Activé : le bouton Partager copie directement le clip, réduit pour respecter la limite d'envoi gratuite de Discord, prêt à être collé dans un message. Désactivé : il copie le lien de partage. Fais un clic droit sur Partager pour utiliser l'autre option dans tous les cas.",
     "homeSidePanel": "Panneau latéral de l’accueil",
-    "homeSidePanelHelp": "Choisissez le panneau à côté des clips récents. Le changement est immédiat."
+    "homeSidePanelHelp": "Choisissez le panneau à côté des clips récents. Le changement est immédiat.",
+    "arrowKeyBehavior": "Action des touches fléchées",
+    "arrowKeyBehaviorHelp": "Dans le lecteur, les flèches déplacent la lecture de 1 seconde (0,1 avec Maj) et règlent le volume par pas de 5 %. L’ancien mode passe au clip précédent ou suivant.",
+    "arrowPlayback": "Naviguer dans la vidéo",
+    "arrowClips": "Changer de clip (ancien mode)"
   },
   "whatsNew": {
     "title": "Nouveautés de Vice {version}",
@@ -983,5 +996,9 @@
   "drag": {
     "unavailable": "Glisser-déposer de fichier indisponible",
     "fallback": "Utilisez Copier le fichier ou le menu Partager. Certaines applications isolées ne peuvent pas recevoir de fichiers locaux."
+  },
+  "playback": {
+    "shortcuts": "Raccourcis clavier",
+    "shortcutHelp": "Espace : lecture/pause · ←/→ : avancer ou reculer de 1 s · Maj + ←/→ : 0,1 s · ↑/↓ : volume ±5 % · M : couper le son · Début/Fin : début/fin. Les champs de texte et les contrôles natifs conservent leurs touches."
   }
 }

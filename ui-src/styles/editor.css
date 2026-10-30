@@ -546,6 +546,14 @@
   flex: 1;
 }
 
+.ed-shortcuts {
+  margin: var(--spacing-2) 0;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.ed-shortcuts summary { cursor: pointer; }
+
 .ed-iconbtn {
   width: 28px;
   height: 28px;
@@ -1167,3 +1175,6 @@
 .ed-audio-volume input { flex: 1; min-width: 0; }
 .ed-audio-inspector p { margin: 0; font-size: 12px; }
 .ed-item-audio[data-muted="true"] { opacity: 0.55; }
+
+.ed-transport .player-tc { white-space: nowrap; }
+.ed-transport .player-volume-range { width: clamp(56px, 8vw, 96px); }

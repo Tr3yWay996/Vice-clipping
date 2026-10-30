@@ -1,17 +1,19 @@
 # Trimming and keyframes
 
-The trimming window has a single playback and selection timeline. Click to move
-whichever endpoint is closer in time; drag the background to scrub without
-changing the selection. Drag either handle to change just that endpoint.
+The trimming window has a single playback and selection timeline. Click to seek;
+drag the background to scrub without changing the selection. Shift + click
+changes the nearest endpoint. Drag either handle to change just that endpoint.
+Boundary edits and snapping never move the playhead or change playback state.
 Selections keep a minimum duration of 0.5 seconds (or the entire recording when
-it is shorter). The play button plays the recording; Preview loops the selection.
+it is shorter). Preview explicitly starts at IN and loops the selection.
 
-Tab to the playback slider or either handle. Left/Right adjusts time by 0.1
-seconds, Shift by 1 second for handles or 5 seconds for playback. Home/End seeks
-to the available limits. With keyframes shown, handle arrows step between actual
-keyframes. Space or Enter on the playback slider toggles playback. Existing
-volume, mute, selection preview, rename, confirmation and keyboard-overlay
-behavior remains available.
+Space toggles playback without requiring focus on the player. Left/Right seek by
+1 second, or 0.1 with Shift. Up/Down adjusts monitoring volume by 5%; M mutes.
+Home/End seeks to the beginning/end. I/O sets IN/OUT at playback time, rejecting
+invalid positions without moving the other endpoint. Focused handle arrows
+adjust only that handle by 1 second (0.1 with Shift), or step actual keyframes
+when shown. Native inputs and controls retain their keys. See
+[the shared keyboard guide](KEYBOARD.md) for ownership and full editor behavior.
 
 **Show keyframes & snap** displays the source video's actual keyframes and snaps
 boundary edits to the nearest valid keyframe. Hiding it restores arbitrary
@@ -67,7 +69,7 @@ forward under the new identity.
 
 Timestamp resolution remains limited by the destination filesystem. Unusable
 keyframe timestamps cannot be snapped to; no synthetic endpoint at video duration
-is added. New UI copy falls back to English for untranslated locales. No
+is added. Keyframe controls and new playback copy are translated in all four shipped locales. No
 recording GOP settings or GPU Screen Recorder arguments change.
 
 ## Validation

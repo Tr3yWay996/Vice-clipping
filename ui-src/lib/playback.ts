@@ -113,36 +113,31 @@ export function useVideoFailure(
   return failed;
 }
 
+/** Shared by HTML media and the editor's composite timeline. */
+export function createSeekScheduler(apply: (seconds: number) => void) {
+  let frame: number | null = null;
+  let pending = 0;
+  const cancel = () => {if (frame !== null) cancelAnimationFrame(frame); frame = null;};
+  return {cancel, seek(seconds: number, immediate = true) {
+    pending = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+    const commit = () => {frame = null; apply(pending);};
+    if (immediate) {cancel(); commit();}
+    else if (frame === null) frame = requestAnimationFrame(commit);
+  }};
+}
+
 /** Coalesce pointer-move seeks while keeping clicks and final commits exact. */
 export function useScrubSeek(ref: RefObject<HTMLVideoElement | null>, onPosition?: (seconds: number) => void) {
-  const frame = useRef<number | null>(null);
-  const pending = useRef(0);
+  const scheduler = useRef<ReturnType<typeof createSeekScheduler> | null>(null);
+  if (!scheduler.current) scheduler.current = createSeekScheduler(at => seekTo(ref.current, at));
   const changed = useRef(onPosition);
   changed.current = onPosition;
-  useEffect(() => () => {if (frame.current !== null) cancelAnimationFrame(frame.current);}, []);
+  useEffect(() => () => scheduler.current?.cancel(), []);
   const seek = useCallback((seconds: number, immediate = true) => {
-    pending.current = Math.max(0, seconds);
-    changed.current?.(pending.current);
-    const apply = () => {frame.current = null; seekTo(ref.current, pending.current);};
-    if (immediate) {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-      apply();
-    } else if (frame.current === null) frame.current = requestAnimationFrame(apply);
+    changed.current?.(Math.max(0, seconds));
+    scheduler.current!.seek(seconds, immediate);
   }, [ref]);
   return {seek};
 }
 
-/** Shared Space/M behavior; each surface retains its own navigation shortcuts. */
-export function playbackShortcut(event: KeyboardEvent, toggle: () => void, mute: () => void): boolean {
-  if (event.defaultPrevented || event.ctrlKey || event.altKey || event.metaKey) return false;
-  const target = event.target instanceof HTMLElement ? event.target : null;
-  if (target?.closest('input, textarea, select') || target?.isContentEditable) return false;
-  if (event.code === 'Space' || event.key === ' ') {
-    if (target?.closest('button, a, [role="button"], [role="switch"]')) return false;
-    event.preventDefault();
-    if (!event.repeat) toggle();
-    return true;
-  }
-  if (event.key.toLowerCase() === 'm') {event.preventDefault(); mute(); return true;}
-  return false;
-}
+export {playbackShortcut} from './playbackShortcuts';

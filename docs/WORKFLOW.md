@@ -3,8 +3,10 @@
 The viewer and trim modal share playback controls, audio preferences, loading and
 failure handling, exact seeking and animation-frame-coalesced scrubbing. A normal
 click on the trim timeline seeks. Shift + click changes the nearest boundary;
-handles still drag without Shift. Showing keyframes enables boundary snapping.
-Playback seeking remains free in either mode.
+handles still drag without Shift. Boundary edits and snapping leave playback
+position and state unchanged. Showing keyframes enables boundary snapping.
+Playback seeking remains free in either mode. See [the keyboard guide](KEYBOARD.md)
+for shared shortcuts, viewer preferences and full editor I/O semantics.
 
 ## Daemon-owned jobs
 
@@ -165,9 +167,10 @@ The service restart interrupts active jobs; closing the interface alone does not
 Existing settings, recordings and sidecars are retained. Queue state is created
 on first use. No global keyframe recording interval changes are needed.
 
-## Results for this change
+## Processing workflow validation
 
-Validated in the implementation environment:
+Validated for the initial processing-queue implementation (see the keyboard guide
+for the subsequent playback changes):
 
 - Python: 909 tests run, 903 passed and 6 skipped for unavailable/opt-in platform
   facilities. Includes real FFmpeg trims, exports, process controls and recovery.

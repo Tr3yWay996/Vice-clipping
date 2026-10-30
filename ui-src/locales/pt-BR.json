@@ -342,7 +342,14 @@
     "intervalSeconds": "A cada {seconds} segundos",
     "fpsValue": "{average} FPS em média · {nominal} nominais",
     "keyframeHelp": "Mostrar quadros-chave também ativa o ajuste das alças. Os intervalos usam tempos reais; a contagem de quadros pode ser estimada em vídeos de taxa variável. O alinhamento favorece a cópia direta; o Vice ainda valida o corte e recodifica quando necessário.",
-    "timelineHint": "Clique para navegar · Shift + clique ajusta o limite mais próximo"
+    "timelineHint": "Clique ou arraste para navegar · Shift + clique ou arraste uma alça para ajustar os limites sem mover a reprodução",
+    "shortcutHelp": "I: definir entrada · O: definir saída na posição atual. Ajustar ou alinhar os limites não move o cursor nem altera o estado da reprodução. A prévia começa na entrada e repete a seleção.",
+    "invalidBoundary": "A entrada deve vir antes da saída, com pelo menos {duration} selecionados.",
+    "saveCopy": "Salvar como novo clipe",
+    "savedCopy": "Novo clipe salvo",
+    "replaceOriginal": "Substituir original",
+    "replaceConfirm": "Confirmar substituição",
+    "replaceWarning": "Tudo fora da seleção será removido do original."
   },
   "images": {
     "heading": "Imagens",
@@ -636,7 +643,9 @@
     "audioPreviewFailed": "Não foi possível reproduzir esta faixa de áudio. Tente novamente ou consulte o arquivo de log.",
     "detachedTracksHelp": "Cada fonte da gravação tem sua própria faixa. Por padrão, somente a faixa 1 vem habilitada, de modo que uma faixa combinada não entre no mix duas vezes. Ative o som das fontes que quiser ouvir.",
     "preparingMedia": "Preparando pré-visualização",
-    "recordingCompetition": "Há uma gravação em andamento. A exportação usa a mesma GPU e pode afetar o desempenho do jogo."
+    "recordingCompetition": "Há uma gravação em andamento. A exportação usa a mesma GPU e pode afetar o desempenho do jogo.",
+    "invalidTrimContext": "Selecione um vídeo e posicione a reprodução em um corte válido dentro dele. Áudio separado e editado de forma independente deve ser cortado separadamente.",
+    "shortcutHelp": "Selecione um vídeo e pressione I/O para definir a entrada ou saída na posição atual. O áudio separado correspondente acompanha o corte. Outros clipes não se movem; desfazer/refazer restaura toda a edição."
   },
   "settings": {
     "title": "Configurações",
@@ -848,7 +857,11 @@
     "imageDirectoryHelp": "Onde as capturas de tela são salvas. Mantido à parte dos clipes para que o visualizador de imagens não indexe uma pasta de arquivosde vídeo.",
     "soundScreenshot": "Captura de tela",
     "homeSidePanel": "Painel lateral da página inicial",
-    "homeSidePanelHelp": "Escolha o painel ao lado dos clipes recentes. A alteração é imediata."
+    "homeSidePanelHelp": "Escolha o painel ao lado dos clipes recentes. A alteração é imediata.",
+    "arrowKeyBehavior": "Comportamento das setas",
+    "arrowKeyBehaviorHelp": "No player de clipes, as setas avançam ou retrocedem 1 segundo (0,1 com Shift) e ajustam o volume em 5%. O modo antigo troca de clipe.",
+    "arrowPlayback": "Navegar na reprodução",
+    "arrowClips": "Trocar de clipe (modo antigo)"
   },
   "queue": {
     "title": "Fila de processamento",
@@ -915,5 +928,9 @@
   "drag": {
     "unavailable": "Não foi possível arrastar o arquivo",
     "fallback": "Use Copiar arquivo ou o menu Compartilhar. Alguns aplicativos isolados não aceitam arquivos locais."
+  },
+  "playback": {
+    "shortcuts": "Atalhos de teclado",
+    "shortcutHelp": "Espaço: reproduzir/pausar · ←/→: navegar 1 s · Shift + ←/→: 0,1 s · ↑/↓: volume ±5% · M: silenciar · Home/End: início/fim. Campos de texto e controles nativos mantêm suas próprias teclas."
   }
 }
