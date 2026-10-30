@@ -164,6 +164,10 @@ Use **Settings → Detected Games** to confirm unknown games and permanently edi
 artwork and matching rules. Recognition works offline; online artwork lookup is optional.
 See the [game library guide](docs/GAMES.md) for decisions, migration and privacy details.
 
+Deleted clips and screenshots go to Vice's recoverable **Trash**. Retention is
+configurable under **Settings → Storage**, with a 30-day default and a Never option.
+See [Trash and single-click renaming](docs/TRASH.md) for restoration and link behavior.
+
 ## CLI
 
 ```

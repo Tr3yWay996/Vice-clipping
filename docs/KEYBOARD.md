@@ -30,6 +30,10 @@ The preference is saved as `ui.arrow_key_behavior = "playback"` or `"clips"` in
 Vice's existing configuration. Old configs default to playback navigation.
 Changing it needs no daemon restart and does not affect recording hotkeys.
 
+Viewer and Quick Trimmer titles now open their existing rename field with one
+click. Enter confirms and Escape cancels; see [Trash and renaming](TRASH.md) for
+playback preservation and delayed Quick Trimmer saves.
+
 ## Shortcut ownership and accessibility
 
 A single shared document dispatcher handles the active playback context. An open
