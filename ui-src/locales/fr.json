@@ -1000,5 +1000,107 @@
   "playback": {
     "shortcuts": "Raccourcis clavier",
     "shortcutHelp": "Espace : lecture/pause · ←/→ : avancer ou reculer de 1 s · Maj + ←/→ : 0,1 s · ↑/↓ : volume ±5 % · M : couper le son · Début/Fin : début/fin. Les champs de texte et les contrôles natifs conservent leurs touches."
+  },
+  "games": {
+    "title": "Jeux détectés",
+    "suggestions": "Suggestions de reconnaissance des jeux",
+    "suggestionsHelp": "Conserver ici les applications à confirmer. Vice n’ouvre jamais de demande par-dessus une partie.",
+    "online": "Recherche d’illustrations en ligne",
+    "onlineHelp": "Facultatif. Télécharge le catalogue public de Discord et les images choisies. Les titres de fenêtres et chemins des exécutables restent sur cet appareil. Les images en cache fonctionnent hors ligne.",
+    "search": "Rechercher un jeu ou un identifiant",
+    "filterLabel": "Afficher",
+    "filter": {
+      "all": "Tous les jeux",
+      "recognized": "Reconnus",
+      "manual": "Configurés par toi",
+      "pending": "À confirmer ou à revoir",
+      "rejected": "Pas des jeux"
+    },
+    "add": "Ajouter un jeu",
+    "loading": "Chargement de la bibliothèque de jeux…",
+    "empty": "Aucun jeu correspondant. Lance un jeu ou ajoute ses identifiants ici.",
+    "clipCount": {
+      "one": "{formatted} clip",
+      "other": "{formatted} clips"
+    },
+    "steamId": "Identifiant Steam : {id}",
+    "lastDetected": "Dernière détection : {date}",
+    "never": "Pas encore",
+    "confirmGame": "Confirmer le jeu",
+    "correct": "Corriger le nom ou choisir un autre jeu",
+    "notGame": "Ce n’est pas un jeu",
+    "later": "Me demander plus tard",
+    "more": {
+      "one": "Afficher {formatted} jeu de plus",
+      "other": "Afficher {formatted} jeux de plus"
+    },
+    "edit": "Modifier {name}",
+    "save": "Enregistrer le jeu",
+    "name": "Nom affiché",
+    "resetName": "Rétablir le nom automatique",
+    "artPreview": "Aperçu de l’illustration choisie",
+    "importArtwork": "Importer une image locale",
+    "artHelp": "PNG, JPEG ou WebP, jusqu’à 5 Mo et 4096 × 4096 pixels. Vérifie l’aperçu avant d’enregistrer. Les images personnelles restent locales ; Discord utilise seulement les images publiques compatibles.",
+    "resetArtwork": "Rétablir l’illustration automatique",
+    "searchArtwork": "Trouver une autre illustration",
+    "artSearchHelp": "Active les recherches en ligne pour consulter le catalogue public. Les mots saisis sont comparés localement ; Vice n’envoie ni chemins de processus ni titres de fenêtres privés.",
+    "artQuery": "Titre du jeu à rechercher",
+    "preview": "Aperçu",
+    "rulesTitle": "Règles de reconnaissance",
+    "rulesHelp": "Un identifiant par ligne. Les exécutables et classes correspondent exactement, sans distinction de casse. Les chemins sont exacts. Les titres doivent être précis et peuvent contenir au plus deux caractères *. En cas de conflit, modifie les identifiants ou fusionne les entrées.",
+    "rules": {
+      "executables": "Alias des exécutables",
+      "paths": "Chemins des exécutables",
+      "classes": "Classes de fenêtres / identifiants d’applications",
+      "steam_ids": "Identifiants Steam",
+      "titles": "Motifs de titres de fenêtres"
+    },
+    "currentStatus": "État de reconnaissance : {status}",
+    "enable": "Reconnaître cette application comme un jeu",
+    "reclassify": "Mettre à jour les clips associés",
+    "remove": "Retirer le jeu mémorisé",
+    "otherGame": "Autre jeu / cible de fusion",
+    "chooseGame": "Choisir un jeu",
+    "merge": "Utiliser ce jeu / fusionner les doublons",
+    "confirmAction": "Confirmer la modification",
+    "continue": "Continuer",
+    "confirm": {
+      "remove": "Retirer cette identité de la bibliothèque active ? Ses identifiants ne produiront plus de suggestions.",
+      "merge": "Regrouper cette identité et ses identifiants avec le jeu choisi ? Les playlists automatiques correspondantes seront fusionnées.",
+      "reclassify": "Enregistrer cette identité sur les clips déjà associés à sa playlist automatique ? Les playlists personnelles restent inchangées."
+    },
+    "filesUntouched": "Les vidéos, noms de fichiers, horodatages, liens de partage et métadonnées de montage restent inchangés.",
+    "reviewPending": {
+      "one": "Examiner {count} suggestion de jeu",
+      "other": "Examiner {count} suggestions de jeux"
+    },
+    "source": {
+      "steam": "Manifeste Steam",
+      "builtin": "Base intégrée",
+      "custom": "Règles personnalisées existantes",
+      "manual": "Ajout manuel",
+      "process": "Application proposée",
+      "legacy": "Bibliothèque de clips existante"
+    },
+    "status": {
+      "recognized": "Reconnu",
+      "confirmed": "Confirmé par toi",
+      "pending": "À confirmer",
+      "deferred": "À revoir plus tard",
+      "rejected": "Pas un jeu"
+    },
+    "errors": {
+      "name": "Saisis un nom de jeu valide (120 caractères maximum).",
+      "rules": "Ajoute au moins un identifiant de reconnaissance valide.",
+      "generic": "Utilise un identifiant propre au jeu, pas un lanceur partagé ou une application système.",
+      "steam": "Les identifiants Steam doivent être des nombres positifs.",
+      "title": "Utilise un motif précis avec au moins cinq lettres ou chiffres et au plus deux caractères *.",
+      "conflict": "Un identifiant appartient déjà à un autre jeu. Modifie les règles ou fusionne les entrées.",
+      "artwork": "Image inutilisable. Choisis un PNG, JPEG ou WebP valide respectant les limites de taille.",
+      "online": "Active d’abord la recherche d’illustrations en ligne.",
+      "offline": "Les illustrations en ligne sont indisponibles. Les images locales et en cache restent utilisables.",
+      "target": "Choisis un autre jeu reconnu.",
+      "action": "Cette action est indisponible."
+    }
   }
 }

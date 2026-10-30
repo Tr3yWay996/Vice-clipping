@@ -23,6 +23,7 @@ import type {
   Playlist,
   Status,
   ProcessingJob,
+  DetectedGame,
   UpdateInfo,
   ViewName,
   WsMessage,
@@ -55,6 +56,9 @@ interface State {
   ready: boolean;
   jobs: ProcessingJob[];
   jobsLoaded: boolean;
+  games: DetectedGame[];
+  gamesLoaded: boolean;
+  settingsSection: string | null;
   loadError: string | null;
   config: Config | null;
   clips: Clip[];
@@ -101,6 +105,9 @@ const initialState: State = {
   ready: false,
   jobs: [],
   jobsLoaded: false,
+  games: [],
+  gamesLoaded: false,
+  settingsSection: null,
   loadError: null,
   config: null,
   clips: [],
@@ -133,6 +140,9 @@ type Action =
   | {type: 'statusSnapshot'; status: Status}
   | {type: 'statusStale'}
   | {type: 'jobsSnapshot'; jobs: ProcessingJob[]}
+  | {type:'gamesSnapshot'; games:DetectedGame[]}
+  | {type:'showGames'}
+  | {type:'settingsSectionOpened'}
   | {type: 'loadFailed'; error: string}
   | {type: 'ws'; msg: WsMessage}
   | {type: 'setView'; view: ViewName; playlistId?: string | null}
@@ -154,10 +164,22 @@ function withEvent(state: State, event: Omit<IslandEvent, 'id'>): State {
   return {...state, event: {...event, id: ++eventSeq}};
 }
 
+function withGames(state: State, games: DetectedGame[]): State {
+  const update = <T extends {game?:string|null; game_id?:string|null}>(item:T):T => {
+    const game = games.find(game => game.id === item.game_id);
+    return game ? {...item, game:game.name, artwork_url:game.artwork_url} : item;
+  };
+  return {...state, games, gamesLoaded:true, clips:state.clips.map(update), images:state.images.map(update),
+    playlists:state.playlists.map(playlist => {
+      const oldName=playlist.game;const next=update(playlist);
+      return next.kind==='auto' && next.game!==oldName && (!playlist.edited || playlist.name===oldName) ? {...next,name:next.game ?? next.name} : next;
+    })};
+}
+
 function reduce(state: State, action: Action): State {
   switch (action.type) {
-    case 'loaded':
-      return {
+    case 'loaded': {
+      const loaded: State = {
         ...state,
         ready: true,
         loadError: null,
@@ -166,7 +188,15 @@ function reduce(state: State, action: Action): State {
         images: action.images,
         playlists: action.playlists,
       };
+      return state.gamesLoaded ? withGames(loaded, state.games) : loaded;
+    }
 
+    case 'gamesSnapshot':
+      return withGames(state, action.games);
+    case 'showGames':
+      return {...state,view:'settings',settingsSection:'detected-games'};
+    case 'settingsSectionOpened':
+      return {...state,settingsSection:null};
     case 'statusSnapshot':
       return {
         ...reduceWs(state, {type: 'status', ...action.status}),
@@ -255,6 +285,8 @@ function reduce(state: State, action: Action): State {
 
 function reduceWs(state: State, msg: WsMessage): State {
   switch (msg.type) {
+    case 'games_changed':
+      return withGames(state,msg.games);
     case 'jobs_changed':
       return {...state, jobs: msg.jobs, jobsLoaded: true};
     case 'clip_saved': {
@@ -474,6 +506,7 @@ interface Store {
   refreshClips: () => Promise<void>;
   refreshImages: () => Promise<void>;
   refreshPlaylists: () => Promise<void>;
+  refreshGames: () => Promise<void>;
   notify: (event: Omit<IslandEvent, 'id'>) => void;
   saveConfig: (
     patch: Record<string, Record<string, unknown>>,
@@ -530,11 +563,21 @@ export function StoreProvider({children}: {children: ReactNode}) {
   // out of date. Listing probes every file and takes about a second on a real
   // library, long enough to delete a picture while a stale copy is in flight.
   const imageEvents = useRef(0);
+  const refreshGamesRef = useRef<() => Promise<void>>(async () => {});
+  const refreshGames = useCallback(() => refreshGamesRef.current(), []);
   const refreshStatus = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     let cancelled = false;
     let request = 0;
     let statusEvents = 0;
+    let gamesRequest = 0;
+    const syncGames = async () => {
+      const current = ++gamesRequest;
+      try {
+        const games = await api.games();
+        if (!cancelled && current === gamesRequest) dispatch({type:'gamesSnapshot',games});
+      } catch (error) {console.debug('Refreshing game library failed',error);}
+    };
     let jobsRequest = 0;
     const syncJobs = async () => {
       const current = ++jobsRequest;
@@ -564,8 +607,10 @@ export function StoreProvider({children}: {children: ReactNode}) {
       }
     };
     refreshStatus.current = syncStatus;
+    refreshGamesRef.current = syncGames;
     const disconnect = connectWs(msg => {
       if (cancelled) return;
+      if (msg.type === 'games_changed') gamesRequest += 1;
       if (msg.type === 'jobs_changed') jobsRequest += 1;
       if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
       if (['status', 'tunnel_url', 'tunnel_error', 'session_start', 'session_stop'].includes(msg.type)) {
@@ -586,10 +631,11 @@ export function StoreProvider({children}: {children: ReactNode}) {
     }, {
       // The socket is subscribed before this snapshot, closing the gap where
       // a tunnel event could have been missed between HTTP load and WS open.
-      onOpen: () => {void syncStatus(); void syncJobs();},
+      onOpen: () => {void syncStatus(); void syncJobs(); void syncGames();},
       onClose: () => {
         request += 1;
         jobsRequest += 1;
+        gamesRequest += 1;
         dispatch({type: 'statusStale'});
       },
     });
@@ -597,7 +643,8 @@ export function StoreProvider({children}: {children: ReactNode}) {
     // never hold this snapshot, or overwrite subsequent live status updates.
     void syncStatus();
     void syncJobs();
-    const resume = () => {void syncStatus(); void syncJobs();};
+    void syncGames();
+    const resume = () => {void syncStatus(); void syncJobs(); void syncGames();};
     const visible = () => {if (document.visibilityState === 'visible') resume();};
     window.addEventListener('focus', resume);
     window.addEventListener('online', resume);
@@ -606,7 +653,9 @@ export function StoreProvider({children}: {children: ReactNode}) {
       cancelled = true;
       request += 1;
       jobsRequest += 1;
+      gamesRequest += 1;
       refreshStatus.current = async () => {};
+      refreshGamesRef.current = async () => {};
       disconnect();
       window.removeEventListener('focus', resume);
       window.removeEventListener('online', resume);
@@ -736,6 +785,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
       refreshClips,
       refreshImages,
       refreshPlaylists,
+      refreshGames,
       notify,
       saveConfig,
     }),
@@ -747,6 +797,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
       refreshClips,
       refreshImages,
       refreshPlaylists,
+      refreshGames,
       notify,
       saveConfig,
     ],

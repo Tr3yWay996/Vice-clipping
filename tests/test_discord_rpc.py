@@ -162,6 +162,10 @@ class _FakeDiscordRPC:
 
 def _discord_daemon(*, enabled: bool = True, client_id: str | None = None) -> ViceDaemon:
     daemon = ViceDaemon.__new__(ViceDaemon)
+    from vice.games import GameLibrary
+    # Each simulated daemon represents a separate installation. Persistent
+    # identities from another test must not influence these focused fixtures.
+    daemon.games = GameLibrary(Path(tempfile.mkdtemp(dir=_sandbox.ROOT)) / 'games.json')
     # Game icons would start a real Discord lookup, and these tests assert the plain logo.
     daemon.cfg = Config(discord=DiscordConfig(
         enabled=enabled, client_id_override=client_id, game_icons=False,

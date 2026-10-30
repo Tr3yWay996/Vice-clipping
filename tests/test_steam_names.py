@@ -118,9 +118,13 @@ class MatchGameSteamFallbackTests(unittest.TestCase):
     def _daemon(self) -> ViceDaemon:
         daemon = ViceDaemon.__new__(ViceDaemon)
         daemon.cfg = Config(discord=DiscordConfig())
+        from vice.games import GameLibrary
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        daemon.games = GameLibrary(Path(directory.name) / 'games.json')
         return daemon
 
-    def test_the_list_still_wins_when_both_match(self) -> None:
+    def test_local_steam_metadata_wins_over_unconfirmed_bundled_names(self) -> None:
         daemon = self._daemon()
         with mock.patch("vice.active_window.read_steam_app_id", return_value=None):
             with mock.patch("vice.main.steam_game_name", return_value="Other") as steam:
@@ -128,8 +132,8 @@ class MatchGameSteamFallbackTests(unittest.TestCase):
                     {"process": "tf_linux64", "class": "steam_app_440", "pid": 1}
                 )
 
-        self.assertEqual(got, "Team Fortress 2")
-        steam.assert_not_called()
+        self.assertEqual(got, "Other")
+        steam.assert_called_once_with("440")
 
     def test_an_unlisted_steam_game_is_named_from_its_window_class(self) -> None:
         daemon = self._daemon()

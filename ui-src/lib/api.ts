@@ -1,4 +1,4 @@
-import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob} from './types';
+import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob, DetectedGame} from './types';
 import {t} from './i18n';
 import type {KeyframeInfo} from './trimming';
 
@@ -10,13 +10,14 @@ import type {KeyframeInfo} from './trimming';
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     ...init,
-    headers: init?.body ? {'Content-Type': 'application/json', ...init?.headers} : init?.headers,
+    headers: init?.body && !(init.body instanceof FormData) ? {'Content-Type': 'application/json', ...init?.headers} : init?.headers,
   });
   if (!res.ok) {
     // Prefer the daemon's own explanation. It is usually the useful one.
     let detail = `${res.status} ${res.statusText}`;
     try {
-      const body = (await res.json()) as {error?: string};
+      const body = (await res.json()) as {error?: string; code?: string};
+      if (body.code) detail = t(`games.errors.${body.code}`);
       if (body.error) detail = body.error;
     } catch {
       // Not JSON. The status line stands on its own.
@@ -38,6 +39,16 @@ const post = <T>(path: string, body?: unknown) =>
 const enc = (segment: string) => encodeURIComponent(segment);
 
 export const api = {
+  games: async () => (await request<{games:DetectedGame[]}>('/api/games', {cache:'no-store'})).games,
+  createGame: (body:unknown) => post<{ok:boolean; id:string}>('/api/games',body),
+  editGame: (id:string, body:unknown) => request<{ok:boolean}>(`/api/games/${enc(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
+  gameAction: (id:string, action:string, target?:string) => post<{ok:boolean}>(`/api/games/${enc(id)}/action`,{action,target}),
+  uploadGameArtwork: (id:string, file:File) => {
+    const form=new FormData();form.append('file',file);
+    return request<{asset:string; url:string}>(`/api/games/${enc(id)}/artwork`,{method:'POST',body:form});
+  },
+  searchGameArtwork: (id:string, query:string) => post<{matches:Array<{name:string;application_id:string}>}>(`/api/games/${enc(id)}/artwork-search`,{query}),
+  previewGameArtwork: (id:string, application_id:string) => post<{asset:string;url:string}>(`/api/games/${enc(id)}/artwork-preview`,{application_id}),
   jobs: async () => (await request<{jobs: ProcessingJob[]}>('/api/jobs', {cache: 'no-store'})).jobs,
   jobControl: (id: string, action: string) => post<{ok: boolean}>(`/api/jobs/${enc(id)}/${enc(action)}`),
   originalFile: (slug: string, prepared = false) => request<{path: string; uri: string; filename: string; size: number}>(`/api/clips/${enc(slug)}/file${prepared ? "?prepared=1" : ""}`, {cache: 'no-store'}),

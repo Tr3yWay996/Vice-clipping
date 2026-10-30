@@ -1042,9 +1042,23 @@ def _quick_tunnel_url(line: str) -> Optional[str]:
 
 # ── share server ─────────────────────────────────────────────────────────────
 
-class ShareServer:
-    def __init__(self, cfg) -> None:
+from .game_api import GameLibraryAPI
+
+
+class ShareServer(GameLibraryAPI):
+    def __init__(self, cfg, games=None) -> None:
+        from .games import GameLibrary
         self.cfg = cfg
+        self.games = games if games is not None else GameLibrary()
+        self._games_loop = None
+        self._games_dirty = False
+        self._games_task = None
+        self._games_lock = asyncio.Lock()
+        self._games_art_checked = set()
+        self._games_art_task = None
+        self._games_art_dirty = False
+        self._games_stopping = False
+        self.games.on_change = self._queue_games_changed
         self._local_app = web.Application()
         self._public_app = web.Application()
         self._local_runner: Optional[web.AppRunner] = None
@@ -1173,6 +1187,14 @@ class ShareServer:
         r.add_post("/api/jobs/{jid}/{action}", self._api_job_control)
         r.add_get("/api/clips/{slug}/file", self._api_clip_file)
         r.add_post("/api/clips/{slug}/prepare", self._api_queue_prepare)
+        r.add_get('/api/games', self._api_games)
+        r.add_post('/api/games', self._api_game_create)
+        r.add_patch('/api/games/{gid}', self._api_game_edit)
+        r.add_post('/api/games/{gid}/action', self._api_game_action)
+        r.add_post('/api/games/{gid}/artwork', self._api_game_artwork)
+        r.add_post('/api/games/{gid}/artwork-search', self._api_game_artwork_search)
+        r.add_post('/api/games/{gid}/artwork-preview', self._api_game_artwork_preview)
+        r.add_get('/api/game-artwork/{asset}', self._api_game_artwork_file)
         r.add_get("/api/status",               self._api_status)
         r.add_post("/api/update/check",         self._api_check_update)
         r.add_post("/api/trigger",             self._api_trigger)
@@ -1249,12 +1271,24 @@ class ShareServer:
                     exc,
                 )
 
+        self._games_loop = asyncio.get_running_loop()
+        await self._publish_games()
         self._jobs.start()
         if self.cfg.sharing.cloudflare_tunnel:
             await self._start_tunnel(public_port)
 
     async def stop(self) -> None:
         self._proxy_stopping = True
+        if hasattr(self, 'games'):
+            self._games_stopping = True
+            self.games.on_change = None
+            self._games_loop = None
+            if self._games_task:
+                self._games_task.cancel()
+                await asyncio.gather(self._games_task, return_exceptions=True)
+            if self._games_art_task:
+                self._games_art_task.cancel()
+                await asyncio.gather(self._games_art_task, return_exceptions=True)
         if hasattr(self, "_jobs"):
             await self._jobs.stop()
         tasks = list(self._proxy_tasks)
@@ -1284,7 +1318,7 @@ class ShareServer:
 
     # ── public helpers (called by ViceDaemon) ─────────────────────────────────
 
-    def add_clip(self, path: Path, game: Optional[str] = None) -> str:
+    def add_clip(self, path: Path, game: Optional[str] = None, game_id: Optional[str] = None) -> str:
         """Register a new clip and return its share URL."""
         slug = path.stem
         self._clips[slug] = path
@@ -1295,8 +1329,15 @@ class ShareServer:
         if self._views.pop(slug, None) is not None:
             _save_views(self._views)
         self._issue_share_token(slug)
-        if (game and self.cfg.output.auto_playlist_by_game
-                and self.playlists.record_auto(game, slug)):
+        identity = self.games.get(game_id) if game_id else (self.games.ensure_name(game) if game else None)
+        if identity:
+            self.games.associate(slug, identity['id'])
+        else:
+            self.games.delete_clip(slug)
+        changed = self.playlists.clear_auto_membership(slug, identity['id'] if identity else None)
+        if game and self.cfg.output.auto_playlist_by_game:
+            changed = self.playlists.record_auto(game, slug, game_id=identity['id']) or changed
+        if changed:
             asyncio.create_task(self._broadcast_playlists())
         asyncio.create_task(self.broadcast({
             "type": "clip_saved",
@@ -1416,7 +1457,7 @@ class ShareServer:
     async def _broadcast_playlists(self) -> None:
         await self.broadcast({
             "type": "playlists_changed",
-            "playlists": self.playlists.list_playlists(),
+            "playlists": self._game_playlists(),
         })
 
     async def refresh_clip(self, slug: str) -> None:
@@ -1482,7 +1523,8 @@ class ShareServer:
             "name":       path.name,
             "size":       size,
             "created_at": created_at,
-            "game":       self.playlists.game_for(slug),
+            "game":       self._game_for(slug),
+            "game_id":    self._game_id(slug),
             "views":      self._views.get(slug, 0),
             # Keys were kept beside this clip for the viewer's overlay.
             "keys":       keystore.sidecar_path(slug).exists(),
@@ -1524,12 +1566,19 @@ class ShareServer:
         out_dir.mkdir(parents=True, exist_ok=True)
         return next_image_path(out_dir, tag)
 
-    def add_image(self, path: Path, game: Optional[str] = None) -> str:
+    def add_image(self, path: Path, game: Optional[str] = None, game_id: Optional[str] = None) -> str:
         """Register a new screenshot and return its slug."""
         slug = path.stem
         self._images[slug] = path
-        if (game and self.cfg.output.auto_playlist_by_game
-                and self.playlists.record_auto(game, image_slug(slug))):
+        identity = self.games.get(game_id) if game_id else (self.games.ensure_name(game) if game else None)
+        if identity:
+            self.games.associate(image_slug(slug), identity['id'])
+        else:
+            self.games.delete_clip(image_slug(slug))
+        changed = self.playlists.clear_auto_membership(image_slug(slug), identity['id'] if identity else None)
+        if game and self.cfg.output.auto_playlist_by_game:
+            changed = self.playlists.record_auto(game, image_slug(slug), game_id=identity['id']) or changed
+        if changed:
             asyncio.create_task(self._broadcast_playlists())
         asyncio.create_task(self._broadcast_image(slug, path))
         return slug
@@ -1586,7 +1635,8 @@ class ShareServer:
             "name":       path.name,
             "size":       size,
             "created_at": created_at,
-            "game":       self.playlists.game_for(image_slug(slug)),
+            "game":       self._game_for(image_slug(slug)),
+            "game_id":    self._game_id(image_slug(slug)),
             "width":      width,
             "height":     height,
             # Annotating rewrites the file under the same slug, so both URLs
@@ -2010,6 +2060,8 @@ class ShareServer:
         if self._views.pop(slug, None) is not None:
             _save_views(self._views)
         self._forget_share_token(slug)
+        if hasattr(self, 'games'):
+            self.games.delete_clip(slug)
         if self.playlists.on_clip_deleted(slug):
             await self._broadcast_playlists()
         if self.editor_project.on_clip_deleted(slug):
@@ -2173,7 +2225,7 @@ class ShareServer:
                 tmp.replace(target)
                 if kept_keys is not None:
                     keystore.save_sidecar(target.stem, keystore.cut_intervals(kept_keys, start, end))
-                self.add_clip(target, self.playlists.game_for(slug))
+                self.add_clip(target, self._game_for(slug), **({'game_id':self._game_id(slug)} if self._game_id(slug) else {}))
                 return web.json_response({"ok": True, "slug": target.stem, "copy": True})
 
             tmp.replace(path)
@@ -2224,6 +2276,8 @@ class ShareServer:
         new_revision = media_revision(new_path)
         self._keyframes.invalidate(path)
         new_slug = new_path.stem
+        if hasattr(self, 'games'):
+            self.games.rename_clip(slug, new_slug)
 
         # Update internal state
         self._clips.pop(slug, None)
@@ -2419,6 +2473,7 @@ class ShareServer:
         if path and path.exists():
             path.unlink()
         _purge_slug_thumbs(slug)
+        self.games.delete_clip(image_slug(slug))
         if self.playlists.on_clip_deleted(image_slug(slug)):
             await self._broadcast_playlists()
         await self.broadcast({"type": "image_deleted", "slug": slug})
@@ -2447,6 +2502,7 @@ class ShareServer:
 
         self._images.pop(slug, None)
         self._images[stem] = target
+        self.games.rename_clip(image_slug(slug), image_slug(stem))
         _purge_slug_thumbs(slug)
         if self.playlists.on_clip_renamed(image_slug(slug), image_slug(stem)):
             await self._broadcast_playlists()
@@ -2567,7 +2623,7 @@ class ShareServer:
         return web.json_response({"ok": True})
 
     async def _api_playlists(self, _: web.Request) -> web.Response:
-        return web.json_response({"playlists": self.playlists.list_playlists()})
+        return web.json_response({"playlists": self._game_playlists()})
 
     async def _api_create_playlist(self, req: web.Request) -> web.Response:
         body = await req.json()
@@ -3063,6 +3119,8 @@ class ShareServer:
         # Always persist validated settings, even when live apply fails.
         # This keeps restart-intended config changes from being lost.
         save_cfg(new_cfg)
+        if old_cfg.ui.game_online_lookup != new_cfg.ui.game_online_lookup or old_cfg.discord.custom_games != new_cfg.discord.custom_games:
+            self._queue_games_changed()
 
         # Pointing Vice at a different pictures folder has to show that
         # folder's contents now, not after a restart.

@@ -3,13 +3,13 @@ import {createRoot, type Root} from 'react-dom/client';
 import {beforeEach, afterEach, describe, expect, it, vi} from 'vitest';
 import {api} from '../lib/api';
 import {connectWs} from '../lib/ws';
-import type {Clip, Config, Status, WsMessage} from '../lib/types';
+import type {Clip, Config, DetectedGame, Status, WsMessage} from '../lib/types';
 import {Home} from '../screens/Home';
 import {StoreProvider, useStore} from './store';
 
 vi.mock('../lib/api', () => ({
   api: {
-    jobs: vi.fn(), jobControl: vi.fn(), status: vi.fn(),
+    games: vi.fn().mockResolvedValue([]), jobs: vi.fn(), jobControl: vi.fn(), status: vi.fn(),
     getConfig: vi.fn(),
     clips: vi.fn(),
     images: vi.fn(),
@@ -88,6 +88,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   vi.mocked(api.jobs).mockResolvedValue([]);
+  vi.mocked(api.games).mockResolvedValue([]);
   vi.mocked(api.getConfig).mockResolvedValue(config);
   vi.mocked(api.clips).mockResolvedValue([]);
   vi.mocked(api.images).mockResolvedValue([]);
@@ -276,5 +277,53 @@ describe('processing queue snapshots', () => {
     await act(async()=>{await store.saveConfig({ui:{home_side_panel:'images'}});});
     expect(container.querySelector('.processing-queue')).toBeNull();
     expect(api.saveConfig).toHaveBeenCalledWith({ui:{home_side_panel:'images'}});
+  });
+});
+
+describe('persistent game library synchronization', () => {
+  const game = (name: string): DetectedGame => ({id:'stable', name, automatic_name:'Old', source:'process', status:'confirmed',
+    user_rules:true, rules:{executables:['game.exe'],paths:[],classes:[],steam_ids:[],titles:[]},
+    steam_app_id:null, artwork_override:null, automatic_artwork:null, artwork_url:null, last_detected:null, clip_count:1});
+
+  it('keeps live game edits when startup media and an older snapshot finish late', async () => {
+    const clips = deferred<Clip[]>(), games = deferred<DetectedGame[]>();
+    vi.mocked(api.clips).mockReturnValue(clips.promise);
+    vi.mocked(api.games).mockReturnValue(games.promise);
+    await mount();
+    await emit({type:'games_changed',games:[game('Corrected')],revision:2});
+    await flush(() => games.resolve([game('Old')]));
+    await flush(() => clips.resolve([{slug:'clip',name:'clip.mp4',game_id:'stable',game:'Old',size:0,
+      duration:10,created_at:'2026-10-30T00:00:00Z',thumb_url:'',video_url:''} as Clip]));
+    expect(store.state.games[0].name).toBe('Corrected');
+    expect(store.state.clips[0].game).toBe('Corrected');
+    expect(store.state.clips[0].slug).toBe('clip');
+  });
+
+  it('recovers missed edits on reconnect and rejects a response from the disconnected socket', async () => {
+    vi.mocked(api.games).mockResolvedValue([game('Original')]);
+    await mount();
+    const pending = deferred<DetectedGame[]>();
+    vi.mocked(api.games).mockReturnValueOnce(pending.promise).mockResolvedValue([game('Edited offline')]);
+    await flush(() => lifecycle.onOpen?.());
+    await flush(() => lifecycle.onClose?.());
+    await flush(() => lifecycle.onOpen?.());
+    await flush(() => pending.resolve([game('Stale')]));
+    expect(store.state.games[0].name).toBe('Edited offline');
+    expect(api.games).toHaveBeenCalledTimes(3);
+  });
+
+  it('refreshes failed snapshots on focus and supports mutation recovery without polling', async () => {
+    vi.mocked(api.games).mockRejectedValueOnce(new Error('offline'));
+    await mount();
+    expect(store.state.gamesLoaded).toBe(false);
+    vi.mocked(api.games).mockResolvedValue([game('Recovered')]);
+    await flush(() => window.dispatchEvent(new Event('focus')));
+    expect(store.state.games[0].name).toBe('Recovered');
+    vi.mocked(api.games).mockResolvedValue([game('Saved without event')]);
+    await act(async () => store.refreshGames());
+    expect(store.state.games[0].name).toBe('Saved without event');
+    const calls=vi.mocked(api.games).mock.calls.length;
+    await flush(() => vi.advanceTimersByTime(120_000));
+    expect(api.games).toHaveBeenCalledTimes(calls);
   });
 });

@@ -1000,5 +1000,107 @@
   "playback": {
     "shortcuts": "Tastenkürzel",
     "shortcutHelp": "Leertaste: Wiedergabe/Pause · ←/→: 1 s springen · Umschalt + ←/→: 0,1 s · ↑/↓: Lautstärke ±5 % · M: stummschalten · Pos1/Ende: Anfang/Ende. Textfelder und native Bedienelemente behalten ihre eigenen Tasten."
+  },
+  "games": {
+    "title": "Erkannte Spiele",
+    "suggestions": "Vorschläge zur Spielerkennung",
+    "suggestionsHelp": "Unbekannte Spiele hier zur Bestätigung sammeln. Vice öffnet niemals eine Nachfrage über dem laufenden Spiel.",
+    "online": "Online-Suche nach Spielbildern",
+    "onlineHelp": "Optional. Lädt den öffentlichen Discord-Katalog und ausgewählte Bilder. Fenstertitel und Programmpfade bleiben auf diesem Gerät. Gespeicherte Bilder funktionieren offline.",
+    "search": "Spiele oder Kennungen suchen",
+    "filterLabel": "Anzeigen",
+    "filter": {
+      "all": "Alle Spiele",
+      "recognized": "Erkannt",
+      "manual": "Selbst eingerichtet",
+      "pending": "Ausstehend oder später",
+      "rejected": "Keine Spiele"
+    },
+    "add": "Spiel hinzufügen",
+    "loading": "Spielbibliothek wird geladen…",
+    "empty": "Keine passenden Spiele. Starte ein Spiel oder füge hier seine Kennungen hinzu.",
+    "clipCount": {
+      "one": "{formatted} Clip",
+      "other": "{formatted} Clips"
+    },
+    "steamId": "Steam-App-ID: {id}",
+    "lastDetected": "Zuletzt erkannt: {date}",
+    "never": "Noch nicht",
+    "confirmGame": "Spiel bestätigen",
+    "correct": "Name korrigieren oder anderes Spiel wählen",
+    "notGame": "Kein Spiel",
+    "later": "Später fragen",
+    "more": {
+      "one": "{formatted} weiteres Spiel anzeigen",
+      "other": "{formatted} weitere Spiele anzeigen"
+    },
+    "edit": "{name} bearbeiten",
+    "save": "Spiel speichern",
+    "name": "Anzeigename",
+    "resetName": "Automatischen Namen wiederherstellen",
+    "artPreview": "Vorschau des ausgewählten Bildes",
+    "importArtwork": "Lokales Bild importieren",
+    "artHelp": "PNG, JPEG oder WebP, bis 5 MB und 4096 × 4096 Pixel. Vorschau vor dem Speichern prüfen. Eigene Bilder bleiben lokal; Discord verwendet nur unterstützte öffentliche Bilder.",
+    "resetArtwork": "Automatisches Bild wiederherstellen",
+    "searchArtwork": "Anderes Spielbild suchen",
+    "artSearchHelp": "Aktiviere die Online-Suche für den öffentlichen Katalog. Suchwörter werden lokal verglichen; Vice sendet keine Programmpfade oder privaten Fenstertitel.",
+    "artQuery": "Gesuchter Spieltitel",
+    "preview": "Vorschau",
+    "rulesTitle": "Erkennungsregeln",
+    "rulesHelp": "Eine Kennung pro Zeile. Programme und Klassen werden ohne Beachtung der Großschreibung exakt verglichen, ebenso die Pfade. Titelmuster müssen eindeutig sein und dürfen höchstens zwei * enthalten. Konflikte durch Bearbeiten oder Zusammenführen lösen.",
+    "rules": {
+      "executables": "Programmaliasse",
+      "paths": "Programmpfade",
+      "classes": "Fensterklassen / Anwendungskennungen",
+      "steam_ids": "Steam-App-IDs",
+      "titles": "Fenstertitelmuster"
+    },
+    "currentStatus": "Erkennungsstatus: {status}",
+    "enable": "Als Spiel erkennen",
+    "reclassify": "Zugeordnete Clips aktualisieren",
+    "remove": "Gelerntes Spiel entfernen",
+    "otherGame": "Anderes Spiel / Zusammenführungsziel",
+    "chooseGame": "Spiel auswählen",
+    "merge": "Spiel verwenden / Duplikate zusammenführen",
+    "confirmAction": "Bibliotheksänderung bestätigen",
+    "continue": "Fortfahren",
+    "confirm": {
+      "remove": "Diese Identität aus der aktiven Bibliothek entfernen? Ihre Kennungen erzeugen keine weiteren Vorschläge.",
+      "merge": "Diese Identität und ihre Kennungen mit dem gewählten Spiel verbinden? Zugehörige automatische Playlists werden zusammengeführt.",
+      "reclassify": "Diese Identität für bereits der automatischen Playlist zugeordnete Clips speichern? Eigene Playlists bleiben unverändert."
+    },
+    "filesUntouched": "Videos, Dateinamen, Zeitstempel, Freigabelinks und Bearbeitungsmetadaten bleiben unverändert.",
+    "reviewPending": {
+      "one": "{count} Spielvorschlag prüfen",
+      "other": "{count} Spielvorschläge prüfen"
+    },
+    "source": {
+      "steam": "Steam-Manifest",
+      "builtin": "Mitgelieferte Datenbank",
+      "custom": "Bestehende eigene Regeln",
+      "manual": "Manuell hinzugefügt",
+      "process": "Vorgeschlagene Anwendung",
+      "legacy": "Bestehende Clipbibliothek"
+    },
+    "status": {
+      "recognized": "Erkannt",
+      "confirmed": "Selbst bestätigt",
+      "pending": "Bestätigung ausstehend",
+      "deferred": "Später prüfen",
+      "rejected": "Kein Spiel"
+    },
+    "errors": {
+      "name": "Gib einen gültigen Spielnamen mit höchstens 120 Zeichen ein.",
+      "rules": "Füge mindestens eine gültige Erkennungskennung hinzu.",
+      "generic": "Verwende eine spielspezifische Kennung statt eines gemeinsamen Starters oder Systemprogramms.",
+      "steam": "Steam-App-IDs müssen positive Zahlen sein.",
+      "title": "Verwende ein eindeutiges Muster mit mindestens fünf Buchstaben oder Ziffern und höchstens zwei *.",
+      "conflict": "Eine Kennung gehört bereits zu einem anderen Spiel. Regeln bearbeiten oder Einträge zusammenführen.",
+      "artwork": "Das Bild ist unbrauchbar. Wähle eine gültige PNG-, JPEG- oder WebP-Datei innerhalb der Größenlimits.",
+      "online": "Aktiviere zuerst die Online-Suche nach Spielbildern.",
+      "offline": "Online-Spielbilder sind nicht verfügbar. Lokale und gespeicherte Bilder funktionieren weiterhin.",
+      "target": "Wähle ein anderes erkanntes Spiel.",
+      "action": "Diese Aktion ist nicht verfügbar."
+    }
   }
 }

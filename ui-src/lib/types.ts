@@ -12,6 +12,8 @@ export interface Clip {
   size: number;
   created_at: string;
   game: string | null;
+  game_id?: string | null;
+  artwork_url?: string | null;
   views: number;
   /** Keys were kept beside this clip for the viewer's keyboard overlay. */
   keys?: boolean;
@@ -42,6 +44,8 @@ export interface Image {
   size: number;
   created_at: string;
   game: string | null;
+  game_id?: string | null;
+  artwork_url?: string | null;
   width: number;
   height: number;
   /** Carries the file revision, so an annotation shows rather than the cache. */
@@ -62,6 +66,8 @@ export interface Playlist {
   kind: 'auto' | 'custom' | string;
   name: string;
   game: string | null;
+  game_id?: string | null;
+  artwork_url?: string | null;
   emoji: string | null;
   color1: string | null;
   color2: string | null;
@@ -142,6 +148,7 @@ export interface Config {
 
 /** Every message the daemon broadcasts. */
 export type WsMessage =
+  | {type: 'games_changed'; games: DetectedGame[]; revision: number}
   | {type: 'jobs_changed'; jobs: ProcessingJob[]}
   | {type: 'clip_saved'; clip: Clip}
   | {type: 'clip_deleted'; slug: string}
@@ -207,4 +214,21 @@ export interface ProcessingJob {
   error: string | null;
   result_path: string | null;
   can_pause: boolean;
+}
+
+export type GameRules = Record<'executables' | 'paths' | 'classes' | 'steam_ids' | 'titles', string[]>;
+export interface DetectedGame {
+  id: string;
+  name: string;
+  automatic_name: string;
+  user_rules?: boolean;
+  source: 'steam' | 'builtin' | 'custom' | 'process' | 'manual' | 'legacy';
+  status: 'recognized' | 'confirmed' | 'pending' | 'deferred' | 'rejected';
+  rules: GameRules;
+  steam_app_id: string | null;
+  artwork_override: string | null;
+  automatic_artwork: string | null;
+  artwork_url: string | null;
+  last_detected: string | null;
+  clip_count: number;
 }

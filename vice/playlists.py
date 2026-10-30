@@ -2,9 +2,9 @@
 Playlist store, persisted clip groupings that survive renames and deletes.
 
 Two kinds of playlists:
-  • auto:   created when a game is detected at clip-save time; keyed by the
-             sanitized game name so filename backfill and live detection
-             converge on the same playlist.
+  • auto:   created when a game is detected at clip-save time; linked to its
+             stable game identity. Legacy name keys remain compatible with
+             filename backfill and keep existing playlist IDs intact.
   • custom, user-created (name, emoji, gradient colors); clips are added
              from the UI.
 
@@ -234,7 +234,7 @@ class PlaylistStore:
 
     def record_auto(self, game: str, slug: str,
                     display_name: Optional[str] = None,
-                    from_backfill: bool = False) -> bool:
+                    from_backfill: bool = False, game_id: Optional[str] = None) -> bool:
         """Add a clip to its game's auto playlist, creating it if needed.
         Returns True when anything changed."""
         key = game_key(game)
@@ -247,12 +247,16 @@ class PlaylistStore:
                 return False
             self._dismissed_auto.discard(key)
         pid = f"auto:{key}"
-        p = self.get(pid)
+        p = next((p for p in self._playlists if game_id and p.get('game_id') == game_id and p.get('kind') == 'auto'), None) or self.get(pid)
+        identity_changed = p is not None and bool(game_id) and p.get('game_id') != game_id
+        if p is not None and game_id:
+            p['game_id'] = game_id
         if p is None:
             color1, color2 = PL_COLORS[zlib.crc32(key.encode()) % len(PL_COLORS)]
             p = {
                 "id": pid,
                 "kind": "auto",
+                "game_id": game_id,
                 "name": display_name or game,
                 "game": display_name or game,
                 "emoji": "",
@@ -264,10 +268,41 @@ class PlaylistStore:
             self._playlists.append(p)
         slugs = p.setdefault("clip_slugs", [])
         if slug in slugs:
-            return False
+            if identity_changed:
+                self.save()
+            return identity_changed
         slugs.append(slug)
         self.save()
         return True
+
+    def clear_auto_membership(self, slug: str, keep_game_id=None) -> bool:
+        changed = False
+        for playlist in list(self._playlists):
+            if playlist.get('kind') != 'auto' or slug not in playlist.get('clip_slugs', []):
+                continue
+            if keep_game_id and playlist.get('game_id') == keep_game_id:
+                continue
+            playlist['clip_slugs'].remove(slug)
+            if self._prunable_when_empty(playlist):
+                self._playlists.remove(playlist)
+            changed = True
+        if changed:
+            self.save()
+        return changed
+
+    def merge_game(self, source_id: str, target_id: str, name: str) -> None:
+        """Merge only game-auto membership; custom playlists and files stay put."""
+        destination = next((p for p in self._playlists if p.get('kind') == 'auto' and p.get('game_id') == target_id), None)
+        for playlist in list(self._playlists):
+            if playlist.get('kind') != 'auto' or playlist.get('game_id') != source_id:
+                continue
+            if destination is not None:
+                destination['clip_slugs'] = list(dict.fromkeys(destination.get('clip_slugs', []) + playlist.get('clip_slugs', [])))
+                self._playlists.remove(playlist)
+            else:
+                playlist.update(game_id=target_id, game=name, name=name)
+                destination = playlist
+        self.save()
 
     # ── clip lifecycle hooks (called by the share server) ────────────────────
 
@@ -316,6 +351,8 @@ class PlaylistStore:
         for slug in sorted(slugs):
             m = _TAGGED_CLIP_RE.match(slug)
             if not m:
+                continue
+            if any(p.get('kind') == 'auto' and p.get('game_id') and slug in p.get('clip_slugs', []) for p in self._playlists):
                 continue
             tag = m.group("tag")
             display = tag_index.get(game_key(tag), tag.replace("-", " "))
