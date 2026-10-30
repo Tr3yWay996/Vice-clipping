@@ -1,5 +1,7 @@
 import {useEffect, useRef, useState} from 'react';
 
+import {attachVideoFile, prepareClipDrag} from '../lib/clipDrag';
+import {useStore} from '../state/store';
 import {api} from '../lib/api';
 import {formatBytes, formatDuration} from '../lib/format';
 import {clipTitle, type Clip} from '../lib/types';
@@ -10,11 +12,6 @@ interface DiscordCopy {
   path: string;
   filename: string;
   size: number;
-}
-
-/** file:// URI for an absolute path, with every segment escaped. */
-function fileUri(path: string): string {
-  return `file://${path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 /**
@@ -33,6 +30,8 @@ export function ShareModal({
   onClose: () => void;
   onCopyLink: (clip: Clip) => void;
 }) {
+  const {state} = useStore();
+  const [jobId, setJobId] = useState<string | null>(null);
   const [copy, setCopy] = useState<DiscordCopy | null>(null);
   const [failed, setFailed] = useState('');
   const slug = clip?.slug;
@@ -42,20 +41,27 @@ export function ShareModal({
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
+    setJobId(null);
     setCopy(null);
     setFailed('');
     void api
-      .discordCopy(slug)
-      .then(result => {
-        if (cancelled) return;
-        if (result.ok === false) throw new Error(result.error || t('viewer.shareDragFailed'));
-        setCopy(result);
-      })
+      .prepareClip(slug)
+      .then(result => {if (!cancelled) setJobId(result.job_id);})
       .catch((err: Error) => !cancelled && setFailed(err.message));
     return () => {
       cancelled = true;
     };
   }, [slug]);
+
+  useEffect(() => {
+    const job = state.jobs.find(job => job.id === jobId);
+    if (job?.status === 'completed' && slug) {
+      let current = true;
+      void api.originalFile(slug, true).then(file => {if (current) setCopy(file);})
+        .catch(error => {if (current) setFailed(error.message);});
+      return () => {current = false;};
+    } else if (job && ['failed', 'interrupted', 'cancelled'].includes(job.status)) setFailed(job.error || t('viewer.shareDragFailed'));
+  }, [state.jobs, jobId, slug]);
 
   // Held through the closing animation, or the sheet would empty itself out
   // one frame before it fades.
@@ -71,15 +77,7 @@ export function ShareModal({
       e.preventDefault();
       return;
     }
-    e.dataTransfer.effectAllowed = 'copy';
-    // A file:// uri-list is what a file manager offers and what an app off
-    // the side of the window (Discord) turns back into a dropped file.
-    // Chromium's own DownloadURL never reaches the desktop from here: the
-    // native window is QtWebEngine, which does not implement it.
-    e.dataTransfer.setData('text/uri-list', fileUri(copy.path));
-    // Read only by targets that take text, where the link is the useful
-    // thing to land in a message box.
-    e.dataTransfer.setData('text/plain', link || fileUri(copy.path));
+    attachVideoFile(e, shown, copy.path);
   };
 
   return (
@@ -104,6 +102,7 @@ export function ShareModal({
           className="share-drag"
           data-ready={copy ? true : undefined}
           draggable={Boolean(copy)}
+          onPointerEnter={() => prepareClipDrag(shown)}
           onDragStart={onDragStart}>
           {shown.thumb_url ? (
             <img src={shown.thumb_url} alt={clipTitle(shown)} draggable={false} />

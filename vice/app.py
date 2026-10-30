@@ -999,6 +999,21 @@ def _run_webview(url: str) -> None:
                 # Logging the failure to log would be the same failure.
                 pass
 
+        def file_drag_capabilities(self) -> bool:
+            """GTK keeps its existing HTML file-URI drag fallback."""
+            return gui == 'qt'
+
+        def drag_clip(self, slug: str, prepared: bool = False, appearance: dict | None = None) -> dict:
+            """Only an indexed clip can become a native file drag."""
+            from .native_drag import resolve_drag_file, drag_file
+            try:
+                data = resolve_drag_file(url, slug, bool(prepared))
+                data['appearance'] = appearance or {}
+                return drag_file(data)
+            except Exception as exc:
+                log.debug('Native file drag unavailable: %s', exc)
+                return {'ok': False, 'reason': 'unavailable'}
+
         def copy_to_clipboard(self, text: str) -> bool:
             """Copy `text` to the system clipboard via wl-copy / xclip / xsel.
 
