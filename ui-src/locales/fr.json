@@ -262,7 +262,7 @@
     "clipDeleted": "Clip supprimé",
     "errDelete": "Impossible de supprimer le clip",
     "confirmDeleteTitle": "Supprimer ce clip ?",
-    "confirmDeleteBody": "{name} sera supprimé du disque. Cette action est irréversible.",
+    "confirmDeleteBody": "{name} sera déplacé dans la corbeille. Tu pourras le restaurer avant la fin du délai de conservation. Son ancien lien public sera désactivé.",
     "copyLinkTitle": "Copier ce lien",
     "copyLinkBody": "Le presse-papiers n'était pas disponible, voici donc le lien à copier à la main.",
     "highlight": "Moment fort",
@@ -325,7 +325,8 @@
     "shareDragHint": "Glisse ce clip dans n'importe quelle conversation Discord pour l'envoyer",
     "sharePreparing": "Création d'une copie adaptée à Discord…",
     "shareDragFailed": "Impossible de préparer la copie pour Discord",
-    "shareDiscordSize": "Prêt pour Discord · {size}"
+    "shareDiscordSize": "Prêt pour Discord · {size}",
+    "clickRename": "Cliquer pour renommer"
   },
   "trim": {
     "saved": "Clip découpé et enregistré",
@@ -404,7 +405,7 @@
     "deleted": "Capture d'écran supprimée",
     "errDelete": "Impossible de supprimer la capture d'écran",
     "confirmDeleteTitle": "Supprimer cette capture d'écran ?",
-    "confirmDeleteBody": "{name} sera déplacé vers la corbeille. Impossible d'annuler depuis ici.",
+    "confirmDeleteBody": "{name} sera déplacé dans la corbeille et pourra être restauré avant la fin du délai de conservation.",
     "pen": "Stylo",
     "penOn": "Stylo activé",
     "penColour": "Couleur du stylo",
@@ -1101,6 +1102,73 @@
       "offline": "Les illustrations en ligne sont indisponibles. Les images locales et en cache restent utilisables.",
       "target": "Choisis un autre jeu reconnu.",
       "action": "Cette action est indisponible."
+    }
+  },
+  "trash": {
+    "title": "Corbeille",
+    "description": "Les clips et captures supprimés restent récupérables jusqu’à la fin du délai de conservation.",
+    "refresh": "Actualiser",
+    "storage": "Espace occupé par la corbeille : {size}",
+    "count": {
+      "one": "{formatted} élément",
+      "other": "{formatted} éléments"
+    },
+    "selectAll": "Tout sélectionner",
+    "restoreAll": "Tout restaurer",
+    "empty": "Vider la corbeille",
+    "selected": {
+      "one": "{count} sélectionné",
+      "other": "{count} sélectionnés"
+    },
+    "restoreSelected": "Restaurer la sélection",
+    "deleteSelected": "Supprimer définitivement la sélection",
+    "working": "Opération en cours…",
+    "loading": "Chargement de la corbeille…",
+    "emptyState": "La corbeille est vide.",
+    "selectItem": "Sélectionner {name}",
+    "kind": {
+      "clip": "Clip",
+      "image": "Capture d’écran"
+    },
+    "recorded": "Enregistré le : {date}",
+    "deleted": "Supprimé le : {date}",
+    "keptForever": "Conservé jusqu’à sa suppression manuelle",
+    "eligible": "Suppression automatique possible",
+    "remaining": {
+      "one": "{count} jour restant",
+      "other": "{count} jours restants"
+    },
+    "originalFolder": "Dossier d’origine : {path}",
+    "unavailable": "Le support ou le fichier est indisponible. Rebranche le disque d’origine puis actualise.",
+    "restore": "Restaurer",
+    "deletePermanently": "Supprimer définitivement",
+    "otherLocation": "Autre emplacement de restauration",
+    "alternativeHelp": "Si le dossier d’origine est inutilisable, choisis le dossier de clips ou de captures actuellement configuré. Un autre disque nécessite une copie à l’identique.",
+    "restoreToLibrary": "Restaurer dans le dossier actuel",
+    "more": "Afficher plus",
+    "confirmPermanent": {
+      "one": "Supprimer définitivement {count} élément et ses métadonnées conservées ? Cette action est irréversible.",
+      "other": "Supprimer définitivement {count} éléments et leurs métadonnées conservées ? Cette action est irréversible."
+    },
+    "retention": "Supprimer automatiquement après",
+    "retentionHelp": "Le délai commence à l’arrivée dans la corbeille. Le raccourcir peut rendre d’anciens éléments immédiatement supprimables. Le nettoyage fonctionne même lorsque la fenêtre de Vice est fermée.",
+    "days": {
+      "one": "{count} jour",
+      "other": "{count} jours"
+    },
+    "never": "Jamais: suppression manuelle uniquement",
+    "open": "Ouvrir la corbeille",
+    "errors": {
+      "index": "L’index de la corbeille est illisible. Son contenu a été préservé ; répare ou restaure l’index avant toute modification.",
+      "unsafe": "L’emplacement de la corbeille contient un chemin ou un lien symbolique inattendu. Aucun fichier extérieur n’a été supprimé.",
+      "missing": "Cet élément ne figure plus dans la corbeille. Actualise puis réessaie.",
+      "storage": "L’opération n’a pas abouti. Vérifie les autorisations et l’espace disponible, puis actualise ou réessaie. Les fichiers récupérables restent dans le journal.",
+      "unavailable": "Le support d’origine ou le fichier supprimé est indisponible. Rebranche le disque puis actualise.",
+      "destination": "Le dossier d’origine est indisponible. Rebranche-le ou choisis Restaurer dans le dossier actuel.",
+      "busy": "Un traitement utilise ce clip ou l’a mis en attente. Attends sa fin ou annule la tâche avant de le déplacer dans la corbeille.",
+      "confirm": "Confirme la suppression définitive pour continuer.",
+      "retention": "Choisis 7, 14, 30 ou 90 jours, ou Jamais.",
+      "connection": "Impossible de charger la corbeille. Vérifie que le service Vice fonctionne puis actualise."
     }
   }
 }

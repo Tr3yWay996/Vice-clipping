@@ -392,3 +392,20 @@
   letter-spacing: 0.02em;
   color: var(--color-text-secondary);
 }
+
+/* Trash cards share library typography, thumbnails and themed controls. */
+.trash-screen { display: grid; gap: var(--spacing-4); }
+.trash-heading, .trash-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing-2); }
+.trash-heading { justify-content: space-between; }
+.trash-heading h1, .trash-heading p, .trash-screen > p { margin: 0; }
+.trash-heading p { color: var(--color-text-secondary); margin-top: var(--spacing-2); }
+.trash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: var(--spacing-4); }
+.trash-card { min-width: 0; }
+.trash-card .clip-body { display: grid; gap: var(--spacing-2); }
+.trash-thumb .clip-thumb-empty { display: grid; place-items: center; }
+.trash-select { position: absolute; top: 10px; left: 10px; z-index: 1; padding: 5px; border-radius: var(--radius-inner); background: var(--vice-surface-high); }
+.trash-tools label { display: inline-flex; align-items: center; gap: var(--spacing-2); }
+.trash-location { overflow-wrap: anywhere; }
+.trash-error { color: var(--color-error); font-size: 13px; }
+.trash-card details { font-size: 12px; }
+.trash-card details p { margin: var(--spacing-2) 0; }

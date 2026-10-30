@@ -246,7 +246,7 @@
     "clipDeleted": "Clipe apagado",
     "errDelete": "Não foi possível apagar o clipe",
     "confirmDeleteTitle": "Apagar este clipe?",
-    "confirmDeleteBody": "{name} será removido do disco. Isto não pode ser desfeito.",
+    "confirmDeleteBody": "{name} será movido para a lixeira e poderá ser restaurado até o fim do período de retenção. O link público antigo deixará de funcionar.",
     "copyLinkTitle": "Copiar este link",
     "copyLinkBody": "Área de transferência indisponível, aqui está o link para ser copiado à mão.",
     "highlight": "Destaque",
@@ -300,7 +300,8 @@
     "expand": "Preencher a janela",
     "shrink": "Voltar ao tamanho normal",
     "expandHint": "Preencher a janela (F, ou duplo-clique)",
-    "shrinkHint": "Voltar ao tamanho normal (F, ou Esc)"
+    "shrinkHint": "Voltar ao tamanho normal (F, ou Esc)",
+    "clickRename": "Clique para renomear"
   },
   "trim": {
     "saved": "Clipe recortado e salvo",
@@ -379,7 +380,7 @@
     "deleted": "Captura de tela apagada",
     "errDelete": "Não foi possível apagar a captura de tela",
     "confirmDeleteTitle": "Apagar esta captura de tela?",
-    "confirmDeleteBody": "{name} será movido para a lixeira. Esta ação não pode ser desfeita a partir do Vice.",
+    "confirmDeleteBody": "{name} será movido para a lixeira e poderá ser restaurado até o fim do período de retenção.",
     "pen": "Caneta",
     "penOn": "Caneta ligada",
     "penColour": "Cor da caneta",
@@ -1033,6 +1034,73 @@
       "offline": "As imagens online estão indisponíveis. Imagens locais e em cache continuam funcionando.",
       "target": "Escolha outro jogo reconhecido.",
       "action": "Esta ação está indisponível."
+    }
+  },
+  "trash": {
+    "title": "Lixeira",
+    "description": "Clipes e capturas excluídos podem ser restaurados até o fim do período de retenção.",
+    "refresh": "Atualizar",
+    "storage": "Espaço ocupado pela lixeira: {size}",
+    "count": {
+      "one": "{formatted} item",
+      "other": "{formatted} itens"
+    },
+    "selectAll": "Selecionar tudo",
+    "restoreAll": "Restaurar tudo",
+    "empty": "Esvaziar lixeira",
+    "selected": {
+      "one": "{count} selecionado",
+      "other": "{count} selecionados"
+    },
+    "restoreSelected": "Restaurar seleção",
+    "deleteSelected": "Excluir seleção permanentemente",
+    "working": "Processando…",
+    "loading": "Carregando lixeira…",
+    "emptyState": "A lixeira está vazia.",
+    "selectItem": "Selecionar {name}",
+    "kind": {
+      "clip": "Clipe",
+      "image": "Captura de tela"
+    },
+    "recorded": "Gravado em: {date}",
+    "deleted": "Excluído em: {date}",
+    "keptForever": "Mantido até a exclusão manual",
+    "eligible": "Disponível para exclusão automática",
+    "remaining": {
+      "one": "Resta {count} dia",
+      "other": "Restam {count} dias"
+    },
+    "originalFolder": "Pasta original: {path}",
+    "unavailable": "O armazenamento ou arquivo está indisponível. Reconecte a unidade original e atualize.",
+    "restore": "Restaurar",
+    "deletePermanently": "Excluir permanentemente",
+    "otherLocation": "Outro local de restauração",
+    "alternativeHelp": "Use a pasta de clipes ou capturas configurada atualmente se o destino original não puder ser usado. Outra unidade exige uma cópia sem alterações.",
+    "restoreToLibrary": "Restaurar na pasta atual da biblioteca",
+    "more": "Mostrar mais",
+    "confirmPermanent": {
+      "one": "Excluir permanentemente {count} item e seus metadados salvos? Não é possível desfazer esta ação.",
+      "other": "Excluir permanentemente {count} itens e seus metadados salvos? Não é possível desfazer esta ação."
+    },
+    "retention": "Excluir automaticamente após",
+    "retentionHelp": "O prazo começa quando o arquivo entra na lixeira. Reduzir esse período pode permitir a exclusão imediata de itens antigos. A limpeza funciona mesmo com a janela do Vice fechada.",
+    "days": {
+      "one": "{count} dia",
+      "other": "{count} dias"
+    },
+    "never": "Nunca: somente exclusão manual",
+    "open": "Abrir lixeira",
+    "errors": {
+      "index": "Não foi possível ler o índice da lixeira. O conteúdo foi preservado; repare ou restaure o índice antes de fazer alterações.",
+      "unsafe": "O local da lixeira contém um caminho ou link simbólico inesperado. Nenhum arquivo externo foi excluído.",
+      "missing": "Este item não está mais na lixeira. Atualize e tente novamente.",
+      "storage": "Não foi possível concluir a operação. Verifique as permissões e o espaço livre e tente novamente. Os arquivos recuperáveis permanecem no registro.",
+      "unavailable": "O armazenamento original ou o arquivo excluído está indisponível. Reconecte a unidade e atualize.",
+      "destination": "A pasta original está indisponível. Reconecte-a ou escolha restaurar na pasta atual da biblioteca.",
+      "busy": "Um processamento de mídia está usando este clipe ou o colocou na fila. Aguarde o término ou cancele a tarefa antes de mover para a lixeira.",
+      "confirm": "Confirme a exclusão permanente para continuar.",
+      "retention": "Escolha 7, 14, 30 ou 90 dias, ou Nunca.",
+      "connection": "Não foi possível carregar a lixeira. Verifique se o serviço Vice está em execução e atualize."
     }
   }
 }

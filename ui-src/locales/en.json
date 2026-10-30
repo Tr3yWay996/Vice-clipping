@@ -273,7 +273,7 @@
     "clipDeleted": "Clip deleted",
     "errDelete": "Could not delete the clip",
     "confirmDeleteTitle": "Delete this clip?",
-    "confirmDeleteBody": "{name} will be removed from disk. This cannot be undone.",
+    "confirmDeleteBody": "{name} will move to Trash. Restore it there until the retention period ends. Its old public link will stop working.",
     "copyLinkTitle": "Copy this link",
     "copyLinkBody": "The clipboard was not available, so here is the link to copy by hand.",
     "highlight": "Highlight",
@@ -338,7 +338,8 @@
     "expand": "Fill the window",
     "shrink": "Back to normal size",
     "expandHint": "Fill the window (F, or double-click)",
-    "shrinkHint": "Back to normal size (F, or Esc)"
+    "shrinkHint": "Back to normal size (F, or Esc)",
+    "clickRename": "Click to rename"
   },
   "trim": {
     "saved": "Clip trimmed and saved",
@@ -417,7 +418,7 @@
     "deleted": "Screenshot deleted",
     "errDelete": "Could not delete the screenshot",
     "confirmDeleteTitle": "Delete this screenshot?",
-    "confirmDeleteBody": "{name} will be moved to the trash. This cannot be undone from here.",
+    "confirmDeleteBody": "{name} will move to Trash and can be restored there until its retention period ends.",
     "pen": "Pen",
     "penOn": "Pen on",
     "penColour": "Pen colour",
@@ -1169,6 +1170,73 @@
       "offline": "Online artwork is unavailable. Cached and local images still work.",
       "target": "Choose another recognized game.",
       "action": "This action is unavailable."
+    }
+  },
+  "trash": {
+    "title": "Trash",
+    "description": "Deleted clips and screenshots stay recoverable until their retention period ends.",
+    "refresh": "Refresh",
+    "storage": "Trash storage: {size}",
+    "count": {
+      "one": "{formatted} item",
+      "other": "{formatted} items"
+    },
+    "selectAll": "Select all",
+    "restoreAll": "Restore all",
+    "empty": "Empty Trash",
+    "selected": {
+      "one": "{count} selected",
+      "other": "{count} selected"
+    },
+    "restoreSelected": "Restore selected",
+    "deleteSelected": "Delete selected permanently",
+    "working": "Working…",
+    "loading": "Loading Trash…",
+    "emptyState": "Trash is empty.",
+    "selectItem": "Select {name}",
+    "kind": {
+      "clip": "Clip",
+      "image": "Screenshot"
+    },
+    "recorded": "Recorded: {date}",
+    "deleted": "Deleted: {date}",
+    "keptForever": "Kept until you delete it manually",
+    "eligible": "Eligible for automatic deletion",
+    "remaining": {
+      "one": "{count} day remaining",
+      "other": "{count} days remaining"
+    },
+    "originalFolder": "Original folder: {path}",
+    "unavailable": "Storage or media is unavailable. Reconnect the original drive and refresh.",
+    "restore": "Restore",
+    "deletePermanently": "Delete permanently",
+    "otherLocation": "Other restore location",
+    "alternativeHelp": "Use the current configured clips or screenshots folder if the original destination cannot be used. A different disk requires a byte-for-byte copy.",
+    "restoreToLibrary": "Restore to current library folder",
+    "more": "Show more",
+    "confirmPermanent": {
+      "one": "Permanently delete {count} item and its retained metadata? This cannot be undone.",
+      "other": "Permanently delete {count} items and their retained metadata? This cannot be undone."
+    },
+    "retention": "Automatically delete after",
+    "retentionHelp": "Age starts when media enters Trash. Shortening this period can make older items eligible for immediate deletion. Cleanup runs even when the Vice window is closed.",
+    "days": {
+      "one": "{count} day",
+      "other": "{count} days"
+    },
+    "never": "Never: manual deletion only",
+    "open": "Open Trash",
+    "errors": {
+      "index": "The trash index could not be read. Its contents were preserved; repair or restore the index before making changes.",
+      "unsafe": "The trash location contains an unexpected path or symbolic link. No external files were deleted.",
+      "missing": "This trash item is no longer listed. Refresh and try again.",
+      "storage": "The operation could not finish. Check folder permissions and free space, then refresh or retry. Recoverable files remain in the journal.",
+      "unavailable": "The original storage or trashed media is unavailable. Reconnect the drive and refresh.",
+      "destination": "The original folder is unavailable. Reconnect it or choose Restore to current library folder.",
+      "busy": "Media processing is using or has queued this recording. Wait for it to finish or cancel the job before moving it to Trash.",
+      "confirm": "Confirm permanent deletion before continuing.",
+      "retention": "Choose 7, 14, 30 or 90 days, or Never.",
+      "connection": "Could not load Trash. Check that the Vice daemon is running, then refresh."
     }
   }
 }

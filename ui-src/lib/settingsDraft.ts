@@ -58,6 +58,7 @@ export interface Draft {
 
   directory: string;
   imageDirectory: string;
+  trashRetentionDays: string;
   tagWithGame: boolean;
   autoPlaylist: boolean;
   clipNameTemplate: string;
@@ -178,6 +179,7 @@ export function draftFromConfig(config: Config): Draft {
 
     directory: str(o.directory, ''),
     imageDirectory: str(o.image_directory, ''),
+    trashRetentionDays: String(o.trash_retention_days ?? 30),
     tagWithGame: o.tag_clips_with_game !== false,
     autoPlaylist: o.auto_playlist_by_game !== false,
     clipNameTemplate: str(o.clip_name_template, ''),
@@ -269,6 +271,7 @@ export function patchFromDraft(draft: Draft): Record<string, Record<string, unkn
     output: {
       directory: draft.directory,
       image_directory: draft.imageDirectory,
+      trash_retention_days: Number(draft.trashRetentionDays),
       tag_clips_with_game: draft.tagWithGame,
       auto_playlist_by_game: draft.autoPlaylist,
       clip_name_template: draft.clipNameTemplate.trim(),

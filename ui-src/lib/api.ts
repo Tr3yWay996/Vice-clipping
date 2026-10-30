@@ -1,4 +1,4 @@
-import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob, DetectedGame} from './types';
+import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob, DetectedGame, TrashSnapshot} from './types';
 import {t} from './i18n';
 import type {KeyframeInfo} from './trimming';
 
@@ -17,7 +17,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `${res.status} ${res.statusText}`;
     try {
       const body = (await res.json()) as {error?: string; code?: string};
-      if (body.code) detail = t(`games.errors.${body.code}`);
+      if (body.code) detail = t(body.code.startsWith('trash.') ? body.code : `games.errors.${body.code}`);
       if (body.error) detail = body.error;
     } catch {
       // Not JSON. The status line stands on its own.
@@ -39,6 +39,9 @@ const post = <T>(path: string, body?: unknown) =>
 const enc = (segment: string) => encodeURIComponent(segment);
 
 export const api = {
+  trash: () => request<TrashSnapshot>('/api/trash', {cache:'no-store'}),
+  trashAction: (action:'restore'|'purge', ids:string[], all=false, destination?:'library') =>
+    post<{ok:boolean; results:Array<{id:string;ok:boolean;code?:string}>}>('/api/trash/actions', {action,ids,all,destination,confirm:action==='purge'}),
   games: async () => (await request<{games:DetectedGame[]}>('/api/games', {cache:'no-store'})).games,
   createGame: (body:unknown) => post<{ok:boolean; id:string}>('/api/games',body),
   editGame: (id:string, body:unknown) => request<{ok:boolean}>(`/api/games/${enc(id)}`,{method:'PATCH',body:JSON.stringify(body)}),

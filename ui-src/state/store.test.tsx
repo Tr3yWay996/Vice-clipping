@@ -9,7 +9,7 @@ import {StoreProvider, useStore} from './store';
 
 vi.mock('../lib/api', () => ({
   api: {
-    games: vi.fn().mockResolvedValue([]), jobs: vi.fn(), jobControl: vi.fn(), status: vi.fn(),
+    trash: vi.fn(), games: vi.fn().mockResolvedValue([]), jobs: vi.fn(), jobControl: vi.fn(), status: vi.fn(),
     getConfig: vi.fn(),
     clips: vi.fn(),
     images: vi.fn(),
@@ -87,6 +87,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   localStorage.clear();
+  vi.mocked(api.trash).mockResolvedValue({items:[],total_bytes:0,retention_days:30,error:null});
   vi.mocked(api.jobs).mockResolvedValue([]);
   vi.mocked(api.games).mockResolvedValue([]);
   vi.mocked(api.getConfig).mockResolvedValue(config);
@@ -325,5 +326,33 @@ describe('persistent game library synchronization', () => {
     const calls=vi.mocked(api.games).mock.calls.length;
     await flush(() => vi.advanceTimersByTime(120_000));
     expect(api.games).toHaveBeenCalledTimes(calls);
+  });
+});
+
+describe('trash snapshots and library recovery',()=>{
+  const trashed = {id:'trash-id',name:'one.mp4',source_slug:'one',media_id:'old-revision',kind:'clip' as const,
+    size:10,original_dir:'/recordings',game:null,created_at:'2020-01-01',deleted_at:'2026-10-30',remaining_seconds:30*86400,
+    available:true,state:'trashed',thumbnail_url:null};
+  const snapshot={items:[trashed],total_bytes:10,retention_days:30,error:null};
+  it('ignores an older trash request after a live event and recovers missed restores on reconnect',async()=>{
+    const stale=deferred<import('../lib/types').TrashSnapshot>();vi.mocked(api.trash).mockReturnValueOnce(stale.promise).mockResolvedValue(snapshot);
+    await mount();await emit({type:'trash_changed',...snapshot});await flush(()=>stale.resolve({...snapshot,items:[]}));
+    expect(store.state.trash?.items).toHaveLength(1);
+    vi.mocked(api.trash).mockResolvedValue({...snapshot,items:[],total_bytes:0});
+    await flush(()=>lifecycle.onClose?.());await flush(()=>lifecycle.onOpen?.());expect(store.state.trash?.items).toHaveLength(0);
+  });
+  it('does not reintroduce a trashed clip from a delayed startup list or hide a reused filename',async()=>{
+    const list=deferred<Clip[]>();vi.mocked(api.clips).mockReturnValue(list.promise);vi.mocked(api.trash).mockResolvedValue(snapshot);
+    await mount();
+    const clip={slug:'one',name:'one.mp4',media_id:'old-revision',video_url:'/v/one',size:10,duration:5,created_at:'2020-01-01'} as Clip;
+    await flush(()=>list.resolve([clip]));expect(store.state.clips).toHaveLength(0);
+    await emit({type:'clip_saved',clip:{...clip,media_id:'new-revision'}});
+    expect(store.state.clips).toHaveLength(1);expect(store.state.clips[0].media_id).toBe('new-revision');
+  });
+  it('refreshes the media library after reconnecting across a missed deletion',async()=>{
+    vi.mocked(api.clips).mockResolvedValue([{slug:'one',name:'one.mp4',media_id:'old-revision',size:10,created_at:'2020-01-01'} as Clip]);
+    await mount();expect(store.state.clips).toHaveLength(1);
+    await flush(()=>lifecycle.onClose?.());vi.mocked(api.clips).mockResolvedValue([]);vi.mocked(api.trash).mockResolvedValue(snapshot);
+    await flush(()=>lifecycle.onOpen?.());expect(store.state.clips).toHaveLength(0);expect(store.state.trash?.items).toHaveLength(1);
   });
 });

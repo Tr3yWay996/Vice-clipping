@@ -24,6 +24,7 @@ import {Home} from './screens/Home';
 import {Clips} from './screens/Clips';
 import {Images} from './screens/Images';
 import {Settings} from './screens/Settings';
+import {Trash} from './screens/Trash';
 import {Editor} from './screens/Editor';
 import {About} from './screens/About';
 
@@ -89,6 +90,7 @@ function Screen({view}: {view: string}) {
   if (view === 'home') return <Home />;
   if (view === 'clips') return <Clips />;
   if (view === 'images') return <Images />;
+  if (view === 'trash') return <Trash />;
   if (view === 'settings') return <Settings />;
   if (view === 'editor') return <Editor />;
   return <About />;
