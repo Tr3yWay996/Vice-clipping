@@ -1168,3 +1168,8 @@ kbd {
 .trim-seek { position: absolute; inset: 0; }
 .trim-seek:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 4px; border-radius: var(--radius-element); }
 .trim-timeline-hint { margin: 0; font-size: 11px; color: var(--color-text-secondary); }
+
+/* Names keep their heading typography; the underline reveals the edit action. */
+.viewer-heading h2[role="button"], .trim-head-name[role="button"] { cursor: text; }
+.viewer-heading h2[role="button"]:hover, .trim-head-name[role="button"]:hover { text-decoration: underline dotted; text-underline-offset: 4px; }
+.viewer-heading h2[role="button"]:focus-visible, .trim-head-name[role="button"]:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }

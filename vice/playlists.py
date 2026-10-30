@@ -205,6 +205,17 @@ class PlaylistStore:
 
     # ── membership ───────────────────────────────────────────────────────────
 
+    def restore_memberships(self, saved: list[dict], old: str, new: str) -> None:
+        """Merge remembered membership without reverting later playlist edits."""
+        for snapshot in saved:
+            playlist = self.get(snapshot['id'])
+            if playlist is None:
+                playlist = dict(snapshot, clip_slugs=[])
+                self._playlists.append(playlist)
+            if new not in playlist['clip_slugs']:
+                playlist['clip_slugs'].append(new)
+        self.save()
+
     def add_clip(self, pid: str, slug: str) -> dict:
         p = self.get(pid)
         if not p:

@@ -43,8 +43,10 @@ export function PlaybackProvider({children}: {children: ReactNode}) {
   const [confirmDelete, setConfirmDelete] = useState<Clip | null>(null);
   const [manualCopy, setManualCopy] = useState<string | null>(null);
   const [shareSlug, setShareSlug] = useState<string | null>(null);
+  const [renamingClip, setRenamingClip] = useState<Clip | null>(null);
+  const [renameTransition, setRenameTransition] = useState<{from:string;to:string}|null>(null);
 
-  const viewerClip = clips.find(c => c.slug === viewerSlug) ?? null;
+  const viewerClip = clips.find(c => c.slug === viewerSlug) ?? (renamingClip?.slug === viewerSlug ? renamingClip : null);
   const trimClip = clips.find(c => c.slug === trimSlug) ?? null;
   const shareClip = clips.find(c => c.slug === shareSlug) ?? null;
 
@@ -94,15 +96,18 @@ export function PlaybackProvider({children}: {children: ReactNode}) {
   const rename = useCallback(
     (clip: Clip, name: string) => {
       renamingFrom.current = clip.slug;
+      setRenamingClip(clip);
       void renameClip(clip, name)
         .then(updated => {
           if (!updated?.slug) return;
+          setRenameTransition({from:clip.slug,to:updated.slug});
           setViewerSlug(current => (current === clip.slug ? updated.slug : current));
           setTrimSlug(current => (current === clip.slug ? updated.slug : current));
           setShareSlug(current => (current === clip.slug ? updated.slug : current));
         })
         .finally(() => {
           renamingFrom.current = null;
+          setRenamingClip(null);
         });
     },
     [renameClip],
@@ -167,6 +172,7 @@ export function PlaybackProvider({children}: {children: ReactNode}) {
         onTrim={clip => setTrimSlug(clip.slug)}
         trimOpen={trimSlug !== null}
         onRename={rename}
+        renameTransition={renameTransition}
         onShare={share}
         onShareMenu={shareMenu}
         shareLabel={shareButtonLabel(discordFile)}

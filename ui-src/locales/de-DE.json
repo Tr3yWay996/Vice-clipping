@@ -262,7 +262,7 @@
     "clipDeleted": "Clip gelöscht",
     "errDelete": "Clip konnte nicht gelöscht werden",
     "confirmDeleteTitle": "Diesen Clip löschen?",
-    "confirmDeleteBody": "{name} wird von der Festplatte gelöscht. Das lässt sich nicht rückgängig machen.",
+    "confirmDeleteBody": "{name} wird in den Papierkorb verschoben und kann bis zum Ende der Aufbewahrungsfrist wiederhergestellt werden. Der alte öffentliche Link wird ungültig.",
     "copyLinkTitle": "Diesen Link kopieren",
     "copyLinkBody": "Die Zwischenablage war nicht verfügbar, hier ist der Link zum Kopieren von Hand.",
     "highlight": "Highlight",
@@ -325,7 +325,8 @@
     "expand": "Fenster ausfüllen",
     "shrink": "Zurück zur normalen Größe",
     "expandHint": "Fenster ausfüllen (F oder Doppelklick)",
-    "shrinkHint": "Zurück zur normalen Größe (F oder Esc)"
+    "shrinkHint": "Zurück zur normalen Größe (F oder Esc)",
+    "clickRename": "Zum Umbenennen klicken"
   },
   "trim": {
     "saved": "Clip gekürzt und gespeichert",
@@ -404,7 +405,7 @@
     "deleted": "Screenshot gelöscht",
     "errDelete": "Screenshot konnte nicht gelöscht werden",
     "confirmDeleteTitle": "Diesen Screenshot löschen?",
-    "confirmDeleteBody": "{name} wird in den Papierkorb verschoben. Von hier aus lässt sich das nicht rückgängig machen.",
+    "confirmDeleteBody": "{name} wird in den Papierkorb verschoben und kann bis zum Ende der Aufbewahrungsfrist wiederhergestellt werden.",
     "pen": "Stift",
     "penOn": "Stift an",
     "penColour": "Stiftfarbe",
@@ -1101,6 +1102,73 @@
       "offline": "Online-Spielbilder sind nicht verfügbar. Lokale und gespeicherte Bilder funktionieren weiterhin.",
       "target": "Wähle ein anderes erkanntes Spiel.",
       "action": "Diese Aktion ist nicht verfügbar."
+    }
+  },
+  "trash": {
+    "title": "Papierkorb",
+    "description": "Gelöschte Clips und Screenshots bleiben bis zum Ende der Aufbewahrungsfrist wiederherstellbar.",
+    "refresh": "Aktualisieren",
+    "storage": "Speicher im Papierkorb: {size}",
+    "count": {
+      "one": "{formatted} Element",
+      "other": "{formatted} Elemente"
+    },
+    "selectAll": "Alle auswählen",
+    "restoreAll": "Alle wiederherstellen",
+    "empty": "Papierkorb leeren",
+    "selected": {
+      "one": "{count} ausgewählt",
+      "other": "{count} ausgewählt"
+    },
+    "restoreSelected": "Auswahl wiederherstellen",
+    "deleteSelected": "Auswahl endgültig löschen",
+    "working": "Wird bearbeitet…",
+    "loading": "Papierkorb wird geladen…",
+    "emptyState": "Der Papierkorb ist leer.",
+    "selectItem": "{name} auswählen",
+    "kind": {
+      "clip": "Clip",
+      "image": "Screenshot"
+    },
+    "recorded": "Aufgenommen: {date}",
+    "deleted": "Gelöscht: {date}",
+    "keptForever": "Bis zum manuellen Löschen aufbewahren",
+    "eligible": "Kann automatisch gelöscht werden",
+    "remaining": {
+      "one": "Noch {count} Tag",
+      "other": "Noch {count} Tage"
+    },
+    "originalFolder": "Ursprünglicher Ordner: {path}",
+    "unavailable": "Datenträger oder Datei ist nicht verfügbar. Schließe das ursprüngliche Laufwerk an und aktualisiere.",
+    "restore": "Wiederherstellen",
+    "deletePermanently": "Endgültig löschen",
+    "otherLocation": "Anderer Wiederherstellungsort",
+    "alternativeHelp": "Nutze den aktuell eingestellten Clip- oder Screenshot-Ordner, falls das ursprüngliche Ziel nicht nutzbar ist. Auf ein anderes Laufwerk wird die Datei unverändert kopiert.",
+    "restoreToLibrary": "Im aktuellen Bibliotheksordner wiederherstellen",
+    "more": "Mehr anzeigen",
+    "confirmPermanent": {
+      "one": "{count} Element mit seinen gespeicherten Metadaten endgültig löschen? Dies kann nicht rückgängig gemacht werden.",
+      "other": "{count} Elemente mit ihren gespeicherten Metadaten endgültig löschen? Dies kann nicht rückgängig gemacht werden."
+    },
+    "retention": "Automatisch löschen nach",
+    "retentionHelp": "Die Frist beginnt beim Verschieben in den Papierkorb. Eine kürzere Frist kann ältere Elemente sofort zum Löschen freigeben. Die Bereinigung läuft auch bei geschlossenem Vice-Fenster.",
+    "days": {
+      "one": "{count} Tag",
+      "other": "{count} Tage"
+    },
+    "never": "Nie: nur manuell löschen",
+    "open": "Papierkorb öffnen",
+    "errors": {
+      "index": "Der Papierkorbindex ist nicht lesbar. Sein Inhalt wurde erhalten; repariere oder restauriere ihn vor Änderungen.",
+      "unsafe": "Der Papierkorb enthält einen unerwarteten Pfad oder symbolischen Link. Es wurden keine externen Dateien gelöscht.",
+      "missing": "Dieses Element ist nicht mehr im Papierkorb. Aktualisiere und versuche es erneut.",
+      "storage": "Der Vorgang konnte nicht abgeschlossen werden. Prüfe Ordnerrechte und freien Speicher und versuche es erneut. Wiederherstellbare Dateien bleiben im Journal.",
+      "unavailable": "Der ursprüngliche Datenträger oder die gelöschte Datei ist nicht verfügbar. Schließe das Laufwerk an und aktualisiere.",
+      "destination": "Der ursprüngliche Ordner ist nicht verfügbar. Verbinde ihn erneut oder wähle den aktuellen Bibliotheksordner.",
+      "busy": "Eine Medienverarbeitung verwendet diesen Clip oder hat ihn vorgemerkt. Warte auf den Abschluss oder brich den Auftrag vor dem Löschen ab.",
+      "confirm": "Bestätige das endgültige Löschen, um fortzufahren.",
+      "retention": "Wähle 7, 14, 30 oder 90 Tage oder Nie.",
+      "connection": "Der Papierkorb konnte nicht geladen werden. Prüfe den Vice-Dienst und aktualisiere."
     }
   }
 }

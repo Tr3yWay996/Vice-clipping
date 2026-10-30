@@ -24,6 +24,7 @@ import type {
   Status,
   ProcessingJob,
   DetectedGame,
+  TrashSnapshot,
   UpdateInfo,
   ViewName,
   WsMessage,
@@ -56,6 +57,8 @@ interface State {
   ready: boolean;
   jobs: ProcessingJob[];
   jobsLoaded: boolean;
+  trash: TrashSnapshot | null;
+  trashUnavailable: boolean;
   games: DetectedGame[];
   gamesLoaded: boolean;
   settingsSection: string | null;
@@ -105,6 +108,8 @@ const initialState: State = {
   ready: false,
   jobs: [],
   jobsLoaded: false,
+  trash: null,
+  trashUnavailable: false,
   games: [],
   gamesLoaded: false,
   settingsSection: null,
@@ -140,6 +145,8 @@ type Action =
   | {type: 'statusSnapshot'; status: Status}
   | {type: 'statusStale'}
   | {type: 'jobsSnapshot'; jobs: ProcessingJob[]}
+  | {type:'trashSnapshot'; trash:TrashSnapshot}
+  | {type:'trashUnavailable'}
   | {type:'gamesSnapshot'; games:DetectedGame[]}
   | {type:'showGames'}
   | {type:'settingsSectionOpened'}
@@ -170,10 +177,22 @@ function withGames(state: State, games: DetectedGame[]): State {
     return game ? {...item, game:game.name, artwork_url:game.artwork_url} : item;
   };
   return {...state, games, gamesLoaded:true, clips:state.clips.map(update), images:state.images.map(update),
+    trash:state.trash ? {...state.trash,items:state.trash.items.map(update)} : null,
     playlists:state.playlists.map(playlist => {
       const oldName=playlist.game;const next=update(playlist);
       return next.kind==='auto' && next.game!==oldName && (!playlist.edited || playlist.name===oldName) ? {...next,name:next.game ?? next.name} : next;
     })};
+}
+
+function withTrash(state: State, trash: TrashSnapshot | null): State {
+  if (!trash) return state;
+  const blocked=new Map(trash.items.filter(item=>item.media_id && item.source_slug).map(item=>[`${item.kind}:${item.source_slug}`,item.media_id]));
+  const clips=state.clips.filter(clip=>blocked.get(`clip:${clip.slug}`)!==clip.media_id || !clip.media_id);
+  const images=state.images.filter(image=>blocked.get(`image:${image.slug}`)!==image.media_id || !image.media_id);
+  const active=new Set([...clips.map(clip=>clip.slug),...images.map(image=>`img:${image.slug}`)]);
+  const removed=new Set(trash.items.filter(item=>item.source_slug).map(item=>item.kind==='image'?`img:${item.source_slug}`:item.source_slug!));
+  return {...state,trash,trashUnavailable:false,clips,images,playlists:state.playlists.map(playlist=>({...playlist,
+    clip_slugs:playlist.clip_slugs.filter(slug=>!removed.has(slug)||active.has(slug))}))};
 }
 
 function reduce(state: State, action: Action): State {
@@ -188,9 +207,13 @@ function reduce(state: State, action: Action): State {
         images: action.images,
         playlists: action.playlists,
       };
-      return state.gamesLoaded ? withGames(loaded, state.games) : loaded;
+      return withTrash(state.gamesLoaded ? withGames(loaded, state.games) : loaded, state.trash);
     }
 
+    case 'trashSnapshot':
+      return withTrash(state,action.trash);
+    case 'trashUnavailable':
+      return {...state,trashUnavailable:true};
     case 'gamesSnapshot':
       return withGames(state, action.games);
     case 'showGames':
@@ -253,13 +276,13 @@ function reduce(state: State, action: Action): State {
     }
 
     case 'setClips':
-      return {...state, clips: action.clips};
+      return withTrash(state.gamesLoaded ? withGames({...state, clips:action.clips},state.games) : {...state,clips:action.clips},state.trash);
 
     case 'setImages':
-      return {...state, images: action.images};
+      return withTrash({...state, images:action.images},state.trash);
 
     case 'setPlaylists':
-      return {...state, playlists: action.playlists};
+      return withTrash({...state, playlists:action.playlists},state.trash);
 
     case 'event':
       return withEvent(state, action.event);
@@ -285,6 +308,8 @@ function reduce(state: State, action: Action): State {
 
 function reduceWs(state: State, msg: WsMessage): State {
   switch (msg.type) {
+    case 'trash_changed':
+      return withTrash(state,msg);
     case 'games_changed':
       return withGames(state,msg.games);
     case 'jobs_changed':
@@ -507,6 +532,7 @@ interface Store {
   refreshImages: () => Promise<void>;
   refreshPlaylists: () => Promise<void>;
   refreshGames: () => Promise<void>;
+  refreshTrash: () => Promise<void>;
   notify: (event: Omit<IslandEvent, 'id'>) => void;
   saveConfig: (
     patch: Record<string, Record<string, unknown>>,
@@ -518,17 +544,19 @@ const StoreContext = createContext<Store | null>(null);
 export function StoreProvider({children}: {children: ReactNode}) {
   const [state, dispatch] = useReducer(reduce, initialState);
 
+  const libraryEvents = useRef(0);
+
   // First load. Everything the shell needs before it can show a screen.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const [config, clips, images, playlists] = await Promise.all([
-          api.getConfig(),
-          api.clips(),
-          api.images(),
-          api.playlists(),
-        ]);
+        const config = await api.getConfig();
+        let clips:Clip[], images:Image[], playlists:Playlist[], seen:number;
+        do {
+          seen = libraryEvents.current;
+          [clips,images,playlists] = await Promise.all([api.clips(),api.images(),api.playlists()]);
+        } while (!cancelled && seen !== libraryEvents.current);
         if (!cancelled) dispatch({type: 'loaded', config, clips, images, playlists});
       } catch (err) {
         if (!cancelled) dispatch({type: 'loadFailed', error: (err as Error).message});
@@ -563,6 +591,8 @@ export function StoreProvider({children}: {children: ReactNode}) {
   // out of date. Listing probes every file and takes about a second on a real
   // library, long enough to delete a picture while a stale copy is in flight.
   const imageEvents = useRef(0);
+  const refreshTrashRef = useRef<() => Promise<void>>(async () => {});
+  const refreshTrash = useCallback(() => refreshTrashRef.current(), []);
   const refreshGamesRef = useRef<() => Promise<void>>(async () => {});
   const refreshGames = useCallback(() => refreshGamesRef.current(), []);
   const refreshStatus = useRef<() => Promise<void>>(async () => {});
@@ -570,6 +600,16 @@ export function StoreProvider({children}: {children: ReactNode}) {
     let cancelled = false;
     let request = 0;
     let statusEvents = 0;
+    let trashRequest = 0;
+    const syncTrash = async () => {
+      const current = ++trashRequest;
+      try {
+        const trash = await api.trash();
+        if(!cancelled && current===trashRequest) dispatch({type:'trashSnapshot',trash});
+      } catch {
+        if(!cancelled && current===trashRequest) dispatch({type:'trashUnavailable'});
+      }
+    };
     let gamesRequest = 0;
     const syncGames = async () => {
       const current = ++gamesRequest;
@@ -608,8 +648,11 @@ export function StoreProvider({children}: {children: ReactNode}) {
     };
     refreshStatus.current = syncStatus;
     refreshGamesRef.current = syncGames;
+    refreshTrashRef.current = syncTrash;
     const disconnect = connectWs(msg => {
       if (cancelled) return;
+      if (['clip_saved','clip_deleted','image_saved','image_deleted','playlists_changed'].includes(msg.type)) libraryEvents.current += 1;
+      if (msg.type === 'trash_changed') trashRequest += 1;
       if (msg.type === 'games_changed') gamesRequest += 1;
       if (msg.type === 'jobs_changed') jobsRequest += 1;
       if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
@@ -631,11 +674,15 @@ export function StoreProvider({children}: {children: ReactNode}) {
     }, {
       // The socket is subscribed before this snapshot, closing the gap where
       // a tunnel event could have been missed between HTTP load and WS open.
-      onOpen: () => {void syncStatus(); void syncJobs(); void syncGames();},
+      onOpen: () => {
+        void syncStatus(); void syncJobs(); void syncGames(); void syncTrash();
+        void Promise.all([refreshClips(),refreshImages(),refreshPlaylists()]).catch(error=>console.debug('Library recovery failed',error));
+      },
       onClose: () => {
         request += 1;
         jobsRequest += 1;
         gamesRequest += 1;
+        trashRequest += 1;
         dispatch({type: 'statusStale'});
       },
     });
@@ -644,7 +691,8 @@ export function StoreProvider({children}: {children: ReactNode}) {
     void syncStatus();
     void syncJobs();
     void syncGames();
-    const resume = () => {void syncStatus(); void syncJobs(); void syncGames();};
+    void syncTrash();
+    const resume = () => {void syncStatus(); void syncJobs(); void syncGames(); void syncTrash();};
     const visible = () => {if (document.visibilityState === 'visible') resume();};
     window.addEventListener('focus', resume);
     window.addEventListener('online', resume);
@@ -654,6 +702,8 @@ export function StoreProvider({children}: {children: ReactNode}) {
       request += 1;
       jobsRequest += 1;
       gamesRequest += 1;
+      trashRequest += 1;
+      refreshTrashRef.current = async () => {};
       refreshStatus.current = async () => {};
       refreshGamesRef.current = async () => {};
       disconnect();
@@ -695,7 +745,9 @@ export function StoreProvider({children}: {children: ReactNode}) {
   }, [state.ready]);
 
   const refreshClips = useCallback(async () => {
-    dispatch({type: 'setClips', clips: await api.clips()});
+    let clips:Clip[], seen:number;
+    do {seen=libraryEvents.current;clips=await api.clips();} while(seen!==libraryEvents.current);
+    dispatch({type:'setClips',clips});
   }, []);
 
   const refreshImages = useCallback(async () => {
@@ -786,6 +838,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
       refreshImages,
       refreshPlaylists,
       refreshGames,
+      refreshTrash,
       notify,
       saveConfig,
     }),
@@ -798,6 +851,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
       refreshImages,
       refreshPlaylists,
       refreshGames,
+      refreshTrash,
       notify,
       saveConfig,
     ],

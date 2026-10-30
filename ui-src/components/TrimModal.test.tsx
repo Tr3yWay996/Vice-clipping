@@ -27,6 +27,7 @@ const clip = {
 } as Clip;
 let container: HTMLDivElement, root: Root;
 let close = vi.fn<() => void>();
+const rename = vi.fn();
 const video = () => container.querySelector('video')!;
 const timeline = () => container.querySelector<HTMLElement>('.trim-timeline')!;
 const startHandle = () => container.querySelectorAll<HTMLButtonElement>('.trim-handle')[0];
@@ -63,7 +64,7 @@ async function mount() {
         onClose={close}
         onSaved={vi.fn()}
         notify={vi.fn()}
-        onRename={vi.fn()}
+        onRename={rename}
         onReveal={vi.fn()}
         onOpenExternally={vi.fn()}
       />,
@@ -304,4 +305,23 @@ describe('unified trimming timeline', () => {
       'Free trimming still works',
     );
   });
+});
+
+describe('single-click quick-trimmer title renaming',()=>{
+ it('selects the title, defers renaming until close and preserves selection/playback',async()=>{
+  await mount();await boundaryClick(10);await boundaryClick(50);video().currentTime=20;await video().play();
+  await click(container.querySelector<HTMLElement>('.trim-head-name')!);
+  const input=container.querySelector<HTMLInputElement>('.trim-rename')!;
+  expect(document.activeElement).toBe(input);expect(input.selectionEnd).toBe('session'.length);
+  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'Quick name');input.dispatchEvent(new Event('input',{bubbles:true}));});
+  await key(input,'Enter');expect(rename).not.toHaveBeenCalled();expect(video().currentTime).toBe(20);expect(video().paused).toBe(false);
+  expect(value(startHandle())).toBe(10);expect(value(endHandle())).toBe(50);
+  await click(container.querySelector<HTMLButtonElement>('.trim-modal > .modal-head .modal-close')!);
+  expect(rename).toHaveBeenCalledExactlyOnceWith(clip,'Quick name');expect(close).toHaveBeenCalledOnce();
+ });
+ it('Escape cancels the field without closing the dialog or changing selection',async()=>{
+  await mount();await boundaryClick(10);await click(container.querySelector<HTMLElement>('.trim-head-name')!);
+  await key(container.querySelector('.trim-rename')!,'Escape');expect(rename).not.toHaveBeenCalled();expect(close).not.toHaveBeenCalled();
+  expect(value(startHandle())).toBe(10);expect(container.querySelector('.trim-head-name')).not.toBeNull();
+ });
 });

@@ -88,3 +88,34 @@ describe('editor shared transport and non-ripple keyboard trimming',()=>{
   expect(engine.snapshot().playhead).toBe(8);expect(engine.snapshot().playing).toBe(false);
  });
 });
+
+describe('recoverable source references with unsaved editor changes',()=>{
+ it('keeps rejected autosaves dirty so a later save can retry',async()=>{
+  key('i');const expected=JSON.stringify(engine.project());
+  vi.mocked(fetch).mockResolvedValue({ok:false,status:503} as Response);
+  await engine.saveNow();expect(engine.isDirty()).toBe(true);expect(JSON.stringify(engine.project())).toBe(expected);
+  vi.mocked(fetch).mockResolvedValue({ok:true} as Response);
+  await engine.saveNow();expect(engine.isDirty()).toBe(false);expect(JSON.stringify(engine.project())).toBe(expected);
+ });
+ it('merges trash/restore identities through current edits and undo history',async()=>{
+  key('i');expect(engine.isDirty()).toBe(true);
+  const remote=fixture();remote.items.forEach(item=>{item.clipId='trash:entry';item.sourceName='Original match.mp4'});
+  vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>({project:remote})} as Response);
+  await engine.onProjectChanged();expect(engine.project()!.items[0].start).toBe(8);
+  expect(engine.project()!.items.every(item=>item.clipId==='trash:entry')).toBe(true);expect(root.textContent).toContain('Original match.mp4');
+  key('z',{ctrlKey:true});expect(engine.project()!.items[0].start).toBe(5);expect(engine.project()!.items[0].clipId).toBe('trash:entry');
+  remote.items.forEach(item=>{item.clipId='restored-collision-name';delete item.sourceName});
+  await engine.onProjectChanged();expect(engine.project()!.items[0].clipId).toBe('restored-collision-name');
+  expect(engine.project()!.items[0].sourceName).toBeUndefined();expect(engine.project()!.items[0].start).toBe(5);
+ });
+ it('does not let undo resurrect permanently removed source references',async()=>{
+  key('i');const remote=fixture();remote.items=[];
+  vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>({project:remote})} as Response);
+  await engine.onProjectChanged();expect(engine.project()!.items).toEqual([]);
+  key('z',{ctrlKey:true});expect(engine.project()!.items).toEqual([]);
+ });
+ it('keeps unsaved edits when source reconciliation cannot reach the daemon',async()=>{
+  key('i');const expected=JSON.stringify(engine.project());vi.mocked(fetch).mockRejectedValue(new Error('offline'));
+  await expect(engine.onProjectChanged()).resolves.toBeUndefined();expect(JSON.stringify(engine.project())).toBe(expected);expect(engine.isDirty()).toBe(true);
+ });
+});

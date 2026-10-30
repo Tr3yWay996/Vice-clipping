@@ -138,6 +138,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let missing = new Set<string>();
   let loaded = false;
   let dirty = false;
+  let serverItemIds = new Set<string>();
   let saveTimer: number | undefined;
   let undoStack: string[] = [];
   let redoStack: string[] = [];
@@ -255,6 +256,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
           ? d.project
           : defaultProject();
       missing = new Set(d.missing || []);
+      serverItemIds = new Set(project.items.map(item=>item.id));
     } catch (err) {
       console.debug('Loading the editor project failed', err);
       project = project || defaultProject();
@@ -272,12 +274,19 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   async function saveNow() {
     if (!dirty || !project) return;
     dirty = false;
+    const savedIds = new Set(project.items.map(item=>item.id));
     try {
-      await fetch('/api/editor/project', {
+      const response = await fetch('/api/editor/project', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(project),
       });
+      if (!response.ok) {
+        console.debug('Autosaving the editor project failed', response.status);
+        dirty = true;
+        return;
+      }
+      serverItemIds = savedIds;
     } catch (err) {
       console.debug('Autosaving the editor project failed', err);
       dirty = true;
@@ -1353,7 +1362,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const miss = it.clipId && missing.has(it.clipId) ? ' missing' : '';
     const base = `data-item="${escAttr(it.id)}" style="left:${left}px;width:${w}px"`;
     const c = it.clipId ? clipOf(it) : null;
-    const name = c ? clipTitle(c) : it.clipId || '';
+    const name = c ? clipTitle(c) : it.sourceName ? `${it.sourceName} · ${translate('trash.title')}` : it.clipId || '';
 
     if (it.kind === 'audio') {
       const stream = c?.audio_tracks?.find(track => track.index === (it.audioStream ?? 0));
@@ -2131,9 +2140,40 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       }
     },
     async onProjectChanged() {
-      // Never reload over unsaved local changes still in flight.
-      if (!loaded || dirty) return;
-      await load();
+      if (!loaded) return;
+      if (dirty && project) {
+        // Source identities can change while timeline edits are unsaved.
+        // Merge only those references, preserving timings, text and tracks.
+        try {
+          const response = await fetch('/api/editor/project');
+          if(!response.ok) return;
+          const data = await response.json() as {project?:EdProject};
+          if(!Array.isArray(data.project?.items)) return;
+          const saved = new Map((data.project?.items ?? []).map(item=>[item.id,item]));
+          const merge = (snapshot:EdProject) => {
+            snapshot.items = snapshot.items.filter(item=>!serverItemIds.has(item.id)||saved.has(item.id));
+            for(const item of snapshot.items) {
+              const remote = saved.get(item.id);
+              if (item.clipId && remote?.clipId) {
+                item.clipId = remote.clipId;
+                if(remote.sourceName)item.sourceName=remote.sourceName;
+                else delete item.sourceName;
+              }
+            }
+            return snapshot;
+          };
+          project = merge(project);
+          undoStack = undoStack.map(snapshot=>JSON.stringify(merge(JSON.parse(snapshot))));
+          redoStack = redoStack.map(snapshot=>JSON.stringify(merge(JSON.parse(snapshot))));
+          if(clipboard) clipboard=merge({version:1,tracks:[],items:[clipboard]}).items[0] ?? null;
+          serverItemIds = new Set(saved.keys());
+          refreshMissing();
+          scheduleSave();
+        } catch(error) {
+          console.debug('Refreshing editor source references failed',error);
+          return;
+        }
+      } else await load();
       if (sel && !item(sel)) sel = null;
       renderTimeline();
       renderPreviewFrame(true);

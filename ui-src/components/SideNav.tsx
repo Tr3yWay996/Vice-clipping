@@ -24,6 +24,7 @@ import {
   IconPlus,
   IconSearch,
   IconSettings,
+  IconTrash,
 } from './Icons';
 
 // Keys rather than text: this is module level, so a t() call here would be
@@ -33,6 +34,7 @@ const NAV: {view: ViewName; labelKey: string; Icon: typeof IconHome}[] = [
   {view: 'clips', labelKey: 'nav.allClips', Icon: IconClips},
   {view: 'images', labelKey: 'nav.images', Icon: IconImages},
   {view: 'editor', labelKey: 'nav.editor', Icon: IconEditor},
+  {view:'trash',labelKey:'trash.title',Icon:IconTrash},
   {view: 'settings', labelKey: 'nav.settings', Icon: IconSettings},
   {view: 'about', labelKey: 'nav.about', Icon: IconAbout},
 ];

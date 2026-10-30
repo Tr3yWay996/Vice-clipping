@@ -3,7 +3,7 @@ import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {api} from '../lib/api';
 import {DetectedGamesSettings} from '../components/settings/DetectedGames';
 import type {KeyOverlayState} from '../lib/types';
-import {formatLengthLong} from '../lib/format';
+import {formatLengthLong, formatBytes} from '../lib/format';
 import {availableLocales, currentLocale, setLocale, t, tNode} from '../lib/i18n';
 import {LOCALE_LABELS, type LocaleName} from '../locales';
 import {
@@ -883,6 +883,15 @@ export function Settings() {
               onChange={imageDirectory => update({imageDirectory})}
             />
           </Row>
+
+          <h3>{t('trash.title')}</h3>
+          <Row label={t('trash.retention')} help={t('trash.retentionHelp')}>
+            <Select label={t('trash.retention')} value={draft.trashRetentionDays}
+              onChange={trashRetentionDays=>update({trashRetentionDays})}
+              options={['7','14','30','90','0'].map(value=>[value,value==='0'?t('trash.never'):t('trash.days',{count:Number(value)})] as [string,string])}/>
+          </Row>
+          <p className="clip-meta">{t('trash.storage',{size:formatBytes(state.trash?.total_bytes ?? 0)})}</p>
+          <button type="button" className="btn btn-quiet btn-sm" onClick={()=>dispatch({type:'setView',view:'trash'})}>{t('trash.open')}</button>
 
           <Row
             label={t('settings.tagWithGame')}

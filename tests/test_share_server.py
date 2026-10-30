@@ -1960,7 +1960,10 @@ class EditorApiTests(unittest.IsolatedAsyncioTestCase):
 
         async with self.client.delete(f"{self.base}/api/clips/keeper") as resp:
             self.assertEqual(resp.status, 200)
-        self.assertEqual(self.server.editor_project.load()["items"], [])
+        items = self.server.editor_project.load()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertTrue(items[0]["clipId"].startswith("trash:"))
+        self.assertEqual(items[0]["dur"], 2)
 
     async def test_export_rejects_invalid_projects(self) -> None:
         async with self.client.post(f"{self.base}/api/editor/export", json={

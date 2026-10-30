@@ -7,6 +7,7 @@
 
 export interface Clip {
   slug: string;
+  media_id?: string | null;
   /** The filename, extension included. Use clipTitle() for display. */
   name: string;
   size: number;
@@ -39,6 +40,7 @@ export interface Clip {
  */
 export interface Image {
   slug: string;
+  media_id?: string | null;
   /** The filename, extension included. Use imageTitle() for display. */
   name: string;
   size: number;
@@ -148,6 +150,7 @@ export interface Config {
 
 /** Every message the daemon broadcasts. */
 export type WsMessage =
+  | ({type:'trash_changed'} & TrashSnapshot)
   | {type: 'games_changed'; games: DetectedGame[]; revision: number}
   | {type: 'jobs_changed'; jobs: ProcessingJob[]}
   | {type: 'clip_saved'; clip: Clip}
@@ -175,7 +178,7 @@ export type WsMessage =
   | ({type: 'key_overlay'} & KeyOverlayState)
   | {type: 'config_changed'};
 
-export type ViewName = 'home' | 'clips' | 'images' | 'editor' | 'settings' | 'about';
+export type ViewName = 'home' | 'clips' | 'images' | 'editor' | 'settings' | 'trash' | 'about';
 
 /** The filename without its extension, which is what every screen shows. */
 export function clipTitle(clip: Clip): string {
@@ -231,4 +234,13 @@ export interface DetectedGame {
   artwork_url: string | null;
   last_detected: string | null;
   clip_count: number;
+}
+
+export interface TrashItem {
+  id: string; name: string; source_slug?:string; media_id?:string|null; kind: 'clip'|'image'; size: number; original_dir: string;
+  game: string|null; game_id?:string|null; created_at: string; deleted_at: string; remaining_seconds: number|null;
+  available: boolean; state: string; thumbnail_url: string|null;
+}
+export interface TrashSnapshot {
+  items: TrashItem[]; total_bytes: number; retention_days: number; error: string|null;
 }
