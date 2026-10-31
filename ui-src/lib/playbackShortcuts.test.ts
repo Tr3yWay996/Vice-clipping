@@ -34,6 +34,30 @@ describe('one shared playback shortcut dispatcher',()=>{
   const modal=root(true);editor.append(modal);
   key('ArrowRight');expect(handle).not.toHaveBeenCalled();
  });
+ it('routes Space after a mouse click on an ordinary control but preserves Tab activation',()=>{
+  const el=root(),toggle=vi.fn(),click=vi.fn();const button=document.createElement('button');el.append(button);button.addEventListener('click',click);
+  cleanups.push(bindPlaybackShortcuts({root:()=>el,priority:10,handle:e=>playbackShortcut(e,{toggle,mute:vi.fn()})}));
+  button.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true}));button.focus();
+  expect(key(' ',button).defaultPrevented).toBe(true);expect(toggle).toHaveBeenCalledOnce();expect(click).not.toHaveBeenCalled();
+  key('Tab',button);expect(key(' ',button).defaultPrevented).toBe(false);expect(toggle).toHaveBeenCalledOnce();
+ });
+ it('keeps transport keys after mouse-focused volume and native range steps after Tab',()=>{
+  const el=root();el.innerHTML='<input type="range" data-playback-control="volume"><input type="range"><input type="text">';
+  const toggle=vi.fn(),seek=vi.fn(),setVolume=vi.fn(),mute=vi.fn();
+  cleanups.push(bindPlaybackShortcuts({root:()=>el,priority:10,handle:e=>playbackShortcut(e,{toggle,mute,seek,setVolume,volume:()=>.4,time:()=>10,duration:()=>50})}));
+  const volume=el.firstElementChild as HTMLInputElement;volume.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true}));volume.focus();
+  key(' ',volume);key('ArrowRight',volume);key('ArrowUp',volume);key('m',volume);key('End',volume);
+  expect(toggle).toHaveBeenCalledOnce();expect(seek.mock.calls).toEqual([[11],[50]]);expect(setVolume).toHaveBeenCalledWith(.45);expect(mute).toHaveBeenCalledOnce();
+  key('Tab',volume);expect(key('ArrowRight',volume).defaultPrevented).toBe(false);expect(seek).toHaveBeenCalledTimes(2);
+  expect(key(' ',volume).defaultPrevented).toBe(true);expect(toggle).toHaveBeenCalledTimes(2);
+  for(const input of [...el.querySelectorAll('input')].slice(1)){input.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true}));input.focus();expect(key(' ',input).defaultPrevented).toBe(false);}
+ });
+ it('does not take Space from unrelated controls outside the active player',()=>{
+  const el=root(),button=document.createElement('button'),toggle=vi.fn();document.body.append(button);
+  cleanups.push(bindPlaybackShortcuts({root:()=>el,priority:10,handle:e=>playbackShortcut(e,{toggle,mute:vi.fn()})}));
+  button.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true}));button.focus();
+  expect(key(' ',button).defaultPrevented).toBe(false);expect(toggle).not.toHaveBeenCalled();
+ });
 });
 
 describe('Space tap/hold ownership and recovery',()=>{

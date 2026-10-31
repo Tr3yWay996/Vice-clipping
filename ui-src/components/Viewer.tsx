@@ -10,11 +10,11 @@ import {DEFAULT_MARK_COLOR, MARK_COLORS} from '../lib/palette';
 import {useExitTransition} from '../lib/exit';
 import {formatBytes, formatDuration} from '../lib/format';
 import {
-  clipNeedsProxy,
   playQuietly,
   playbackUrl,
   seekTo,
   useScrubSeek,
+  useTimelineScrub,
   playbackShortcut,
   useVideoFailure,
   videoFailureMessage,
@@ -106,6 +106,7 @@ export function Viewer(props: ViewerProps) {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const shortcutRoot = useRef<HTMLDivElement>(null);
+  const controlsRoot = useRef<HTMLDivElement>(null);
   const {state} = useStore();
   const timelineRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -123,7 +124,8 @@ export function Viewer(props: ViewerProps) {
   const [expanded, setExpanded] = useState(false);
   const [idle, setIdle] = useState(false);
   const [grabbing, setGrabbing] = useState(false);
-  const {seek: scrubSeek} = useScrubSeek(videoRef);
+  const {seek: scrubSeek} = useScrubSeek(videoRef,at=>setPosition(previous=>({...previous,current:at})));
+  const beginScrub = useTimelineScrub(timelineRef,(ratio,immediate)=>scrubSeek(ratio*position.duration,immediate));
   const failed = useVideoFailure(videoRef, mounted);
   const [keysShown, setKeysShown] = useState(storedKeysShown);
   const [keyIntervals, setKeyIntervals] = useState<KeyInterval[] | null>(null);
@@ -166,7 +168,7 @@ export function Viewer(props: ViewerProps) {
     video.pause();
     video.src = src;
     video.load();
-    setPreparing(clipNeedsProxy(clip));
+    setPreparing(true);
     if (!renamed) setPosition({current: 0, duration: 0});
     if (!trimOpen && !renamed) playQuietly(video);
     if (!renamed) void api
@@ -357,8 +359,6 @@ export function Viewer(props: ViewerProps) {
 
   usePlaybackShortcuts(open && !closing && !trimOpen, shortcutRoot, 10, e => {
       if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return false;
-      const target = e.target instanceof HTMLElement ? e.target : null;
-      if (target?.closest('input, textarea, select') || target?.isContentEditable) return false;
       if (playbackShortcut(e, {toggle, rename:() => setRenamingTitle(true), mute: toggleMuted, time: () => videoRef.current?.currentTime ?? 0,
         duration: () => position.duration, seek: at => scrubSeek(at), volume: () => volume,
         setVolume: applyVolume, arrowMode: state.config?.ui?.arrow_key_behavior === 'clips' ? 'clips' : 'playback',
@@ -374,19 +374,12 @@ export function Viewer(props: ViewerProps) {
         void saveFrame();
       } else return false;
       return true;
-  }, () => mediaBoost(videoRef, speed.actions), clip?.slug);
+  }, () => mediaBoost(videoRef, speed.actions), clip?.slug, controlsRoot);
 
   if (!mounted || !clip) return null;
 
   const duration = position.duration;
   const percent = duration > 0 ? (position.current / duration) * 100 : 0;
-
-  const seekFromPointer = (clientX: number) => {
-    const track = timelineRef.current;
-    if (!track || !duration) return;
-    const rect = track.getBoundingClientRect();
-    scrubSeek(clamp01((clientX - rect.left) / rect.width) * duration, false);
-  };
 
   const beginHighlightDrag = (event: React.PointerEvent, highlight: Highlight) => {
     if (event.button !== 0 || !duration) return;
@@ -464,7 +457,7 @@ export function Viewer(props: ViewerProps) {
       className="scrim viewer-scrim"
       data-closing={closing || undefined}
       onMouseDown={e => e.target === e.currentTarget && onClose()}>
-      <div className="viewer-stack">
+      <div className="viewer-stack" ref={controlsRoot}>
         <div
           className="modal viewer"
           ref={shortcutRoot}
@@ -577,6 +570,12 @@ export function Viewer(props: ViewerProps) {
               }}
               onPlay={() => setPaused(false)}
               onPause={() => setPaused(true)}
+              onWaiting={() => setPreparing(true)}
+              onSeeking={() => setPreparing(true)}
+              onSeeked={e => {
+                setPreparing(e.currentTarget.readyState<2);
+                setPosition({current:e.currentTarget.currentTime,duration:Number.isFinite(e.currentTarget.duration)?e.currentTarget.duration:0});
+              }}
               onCanPlay={() => setPreparing(false)}
               onLoadedData={() => setPreparing(false)}
               onError={() => setPreparing(false)}
@@ -604,7 +603,7 @@ export function Viewer(props: ViewerProps) {
                 <span className="mono player-tc">{formatDuration(position.current, true)}</span>
                 <Scrubber
                   percent={percent}
-                  onSeek={ratio => scrubSeek(ratio * duration, false)}
+                  onSeek={(ratio,immediate) => scrubSeek(ratio * duration, immediate)}
                 />
                 <span className="mono player-tc">{formatDuration(duration, true)}</span>
                 <VolumeControl
@@ -652,7 +651,10 @@ export function Viewer(props: ViewerProps) {
             <div
               className="viewer-timeline"
               ref={timelineRef}
-              onClick={e => seekFromPointer(e.clientX)}>
+              tabIndex={0}
+              role="group"
+              aria-label={t('viewer.seekTimeline')}
+              onPointerDown={beginScrub}>
               <div className="viewer-progress" style={{width: `${percent}%`}} />
               <div className="viewer-playhead" style={{left: `${percent}%`}} />
               {highlights.map(h => (
@@ -934,37 +936,12 @@ function PlayerBar({
 }
 
 /** A seekable track. Click anywhere, or press and drag along it. */
-function Scrubber({percent, onSeek}: {percent: number; onSeek: (ratio: number) => void}) {
+function Scrubber({percent, onSeek}: {percent: number; onSeek: (ratio: number, immediate: boolean) => void}) {
   const trackRef = useRef<HTMLDivElement>(null);
-
-  const ratioAt = (clientX: number): number | null => {
-    const rect = trackRef.current?.getBoundingClientRect();
-    if (!rect || !rect.width) return null;
-    return clamp01((clientX - rect.left) / rect.width);
-  };
-
-  const begin = (event: React.PointerEvent) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    const first = ratioAt(event.clientX);
-    if (first !== null) onSeek(first);
-
-    const move = (moveEvent: PointerEvent) => {
-      const next = ratioAt(moveEvent.clientX);
-      if (next !== null) onSeek(next);
-    };
-    const up = () => {
-      window.removeEventListener('pointermove', move, true);
-      window.removeEventListener('pointerup', up, true);
-      window.removeEventListener('pointercancel', up, true);
-    };
-    window.addEventListener('pointermove', move, true);
-    window.addEventListener('pointerup', up, true);
-    window.addEventListener('pointercancel', up, true);
-  };
-
+  const begin = useTimelineScrub(trackRef,onSeek);
   return (
-    <div className="player-track" ref={trackRef} onPointerDown={begin}>
+    <div className="player-track" ref={trackRef} onPointerDown={begin} tabIndex={0} role="slider"
+      aria-label={t('viewer.seekTimeline')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent}>
       <div className="player-fill" style={{width: `${percent}%`}} />
       <div className="player-knob" style={{left: `${percent}%`}} />
     </div>

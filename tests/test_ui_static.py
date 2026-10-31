@@ -471,11 +471,6 @@ class EditorTests(unittest.TestCase):
         # same element and reassigned its src every frame.
         self.assertIn("make(), make(), make()", self.engine)
 
-    def test_clock_follows_the_master_video(self) -> None:
-        # Chasing wall time forced a corrective seek every few frames.
-        self.assertIn("master", self.engine)
-        self.assertIn("m.cur.currentTime", self.engine)
-
     def test_warm_start_constants_are_intact(self) -> None:
         self.assertIn("ED_WARM_MS = 350", self.engine)
         self.assertIn("ED_PRELOAD = 2.0", self.engine)

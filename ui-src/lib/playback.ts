@@ -1,4 +1,4 @@
-import {useEffect, useState, useRef, useCallback, type RefObject} from 'react';
+import {useEffect, useState, useRef, useCallback, type RefObject, type PointerEvent as ReactPointerEvent} from 'react';
 
 import {H264_SUPPORTED, HEVC_SUPPORTED, nativeLog} from './env';
 import type {Clip} from './types';
@@ -138,6 +138,42 @@ export function useScrubSeek(ref: RefObject<HTMLVideoElement | null>, onPosition
     scheduler.current!.seek(seconds, immediate);
   }, [ref]);
   return {seek};
+}
+
+/** Shared pointer capture and cleanup for the viewer's inline/fullscreen tracks. */
+export function useTimelineScrub(ref: RefObject<HTMLElement | null>, seek: (ratio: number, immediate: boolean) => void) {
+  const latest = useRef(seek); latest.current = seek;
+  const cleanup = useRef<() => void>(()=>{});
+  useEffect(()=>()=>cleanup.current(),[]);
+  return (event: ReactPointerEvent<HTMLElement>) => {
+    const track=ref.current;
+    if (!track || event.button!==0) return;
+    cleanup.current();event.preventDefault();track.focus({preventScroll:true});
+    const pointer=event.pointerId;
+    const apply=(ev: {clientX:number},immediate:boolean)=>{
+      const rect=track.getBoundingClientRect();
+      if(rect.width)latest.current(Math.max(0,Math.min(1,(ev.clientX-rect.left)/rect.width)),immediate);
+    };
+    const move=(ev:PointerEvent)=>{if(ev.pointerId===pointer)apply(ev,false);};
+    const finish=(ev:PointerEvent)=>{
+      if(ev.pointerId!==pointer)return;
+      if(ev.type==='pointerup')apply(ev,true);
+      cleanup.current();
+    };
+    cleanup.current=()=>{
+      track.removeEventListener('pointermove',move);
+      track.removeEventListener('pointerup',finish);
+      track.removeEventListener('pointercancel',finish);
+      track.removeEventListener('lostpointercapture',finish);
+      cleanup.current=()=>{};
+    };
+    try{track.setPointerCapture(pointer);}catch{/* Capture can be unavailable during teardown. */}
+    apply(event,true);
+    track.addEventListener('pointermove',move);
+    track.addEventListener('pointerup',finish);
+    track.addEventListener('pointercancel',finish);
+    track.addEventListener('lostpointercapture',finish);
+  };
 }
 
 export {playbackShortcut} from './playbackShortcuts';

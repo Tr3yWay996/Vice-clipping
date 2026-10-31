@@ -72,8 +72,8 @@ async function mount(shown=clip,metadata=true) {
       />,
     ),
   );
-  if(metadata){Object.defineProperty(video(), 'duration', {value: 60, configurable: true});
-    await act(async () => video().dispatchEvent(new Event('loadedmetadata')));}
+  if(metadata){Object.defineProperty(video(),'videoWidth',{value:640,configurable:true});Object.defineProperty(video(),'readyState',{value:4,configurable:true});Object.defineProperty(video(), 'duration', {value: 60, configurable: true});
+    await act(async () => {video().dispatchEvent(new Event('loadedmetadata'));video().dispatchEvent(new Event('loadeddata'));});}
 }
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -354,4 +354,17 @@ it('retains precise boundaries and preview time when the same media is renamed e
  await boundaryClick(12);video().currentTime=18;const start=value(startHandle()),end=value(endHandle());
  await mount({...original,slug:'Exact punctuation!?',name:'Exact punctuation!?.mp4',display_title:'Exact punctuation!?'},false);
  expect(value(startHandle())).toBe(start);expect(value(endHandle())).toBe(end);expect(video().currentTime).toBe(18);
+});
+
+it('keeps transport shortcuts after mouse focus on volume/buttons and reports decoder waiting',async()=>{
+ await mount();
+ const volume=container.querySelector<HTMLInputElement>('.player-volume-range')!;
+ await act(async()=>{volume.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true,button:0}));volume.focus();});
+ await key(volume,' ');expect(video().paused).toBe(false);await key(volume,' ');expect(video().paused).toBe(true);
+ await key(volume,'ArrowRight');expect(video().currentTime).toBe(1);
+ const button=container.querySelector<HTMLElement>('.player-volume button')!;
+ await act(async()=>{button.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true,button:0}));button.focus();});
+ await key(button,' ');expect(video().paused).toBe(false);
+ await act(async()=>video().dispatchEvent(new Event('waiting')));expect(container.querySelector('.video-overlay[role=status]')?.textContent).toContain('Loading preview');
+ await act(async()=>video().dispatchEvent(new Event('canplay')));expect(container.querySelector('.video-overlay[role=status]')).toBeNull();
 });

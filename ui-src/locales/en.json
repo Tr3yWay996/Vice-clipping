@@ -268,6 +268,8 @@
     "whatsNew": "What's new"
   },
   "viewer": {
+    "loadingPreview": "Loading preview",
+    "seekTimeline": "Playback timeline",
     "errReveal": "Could not open the file manager",
     "errSystemPlayer": "Could not open the system player",
     "clipDeleted": "Clip deleted",
@@ -1068,7 +1070,7 @@
   },
   "playback": {
     "shortcuts": "Keyboard shortcuts",
-    "shortcutHelp": "Space: play/pause · ←/→: seek 1 s · Shift + ←/→: seek 0.1 s · ↑/↓: volume ±5% · M: mute · Home/End: beginning/end. Text fields and native controls keep their own keys."
+    "shortcutHelp": "Space: play/pause · ←/→: seek 1 s · Shift + ←/→: seek 0.1 s · ↑/↓: volume ±5% · M: mute · Home/End: beginning/end. Text fields keep their keys. Tab-focused controls retain native activation and slider steps."
   },
   "games": {
     "title": "Detected Games",

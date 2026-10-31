@@ -241,6 +241,8 @@
     "main": "Principal"
   },
   "viewer": {
+    "loadingPreview": "Carregando a prévia",
+    "seekTimeline": "Linha do tempo de reprodução",
     "errReveal": "Não foi possível abrir o gerenciador de arquivos",
     "errSystemPlayer": "Não foi possível abrir o reprodutor do sistema",
     "clipDeleted": "Clipe apagado",
@@ -932,7 +934,7 @@
   },
   "playback": {
     "shortcuts": "Atalhos de teclado",
-    "shortcutHelp": "Espaço: reproduzir/pausar · ←/→: navegar 1 s · Shift + ←/→: 0,1 s · ↑/↓: volume ±5% · M: silenciar · Home/End: início/fim. Campos de texto e controles nativos mantêm suas próprias teclas."
+    "shortcutHelp": "Espaço: reproduzir/pausar · ←/→: navegar 1 s · Shift + ←/→: 0,1 s · ↑/↓: volume ±5% · M: silenciar · Home/End: início/fim. Campos de texto mantêm suas teclas. Controles focados com Tab mantêm a ativação e os passos nativos dos controles deslizantes."
   },
   "games": {
     "title": "Jogos detectados",

@@ -6,7 +6,6 @@ import {useEscape} from '../lib/escape';
 import {usePlaybackShortcuts} from '../lib/playbackShortcuts';
 import {formatDuration, formatNumber} from '../lib/format';
 import {
-  clipNeedsProxy,
   useScrubSeek,
   playbackShortcut,
   playQuietly,
@@ -127,7 +126,7 @@ export function TrimModal({
     setPreviewing(false);
     setSaving(false);
     setError(null);
-    setPreparing(clipNeedsProxy(clip));
+    setPreparing(true);
     setPendingName(null);
     setConfirmReplace(false);
     video.src = playbackUrl(clip);
@@ -274,6 +273,7 @@ export function TrimModal({
     if (event.button !== 0 || !total || saving) return;
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.focus({preventScroll:true});
     leavePreview();
     gesture.current = {
       pointer: event.pointerId,
@@ -450,10 +450,12 @@ export function TrimModal({
                 const next = {start: 0, end: seconds};
                 setSelection(next);
                 selectionRef.current = next;
-                setPreparing(false);
               }}
               onTimeUpdate={onTimeUpdate}
-              onSeeked={onTimeUpdate}
+              onSeeked={e=>{setPreparing(e.currentTarget.readyState<2);onTimeUpdate();}}
+              onSeeking={() => setPreparing(true)}
+              onWaiting={() => setPreparing(true)}
+              onLoadedData={() => setPreparing(false)}
               onPlay={() => setPaused(false)}
               onPause={() => setPaused(true)}
               onEnded={() => {
@@ -509,6 +511,7 @@ export function TrimModal({
 
           <div
             className="trim-timeline"
+            tabIndex={0}
             ref={timelineRef}
             role="group"
             aria-label={t('trim.seekTimeline')}

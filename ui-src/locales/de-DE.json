@@ -257,6 +257,8 @@
     "whatsNew": "Was ist neu"
   },
   "viewer": {
+    "loadingPreview": "Vorschau wird geladen",
+    "seekTimeline": "Wiedergabe-Zeitleiste",
     "errReveal": "Dateimanager konnte nicht geöffnet werden",
     "errSystemPlayer": "System-Player konnte nicht geöffnet werden",
     "clipDeleted": "Clip gelöscht",
@@ -1000,7 +1002,7 @@
   },
   "playback": {
     "shortcuts": "Tastenkürzel",
-    "shortcutHelp": "Leertaste: Wiedergabe/Pause · ←/→: 1 s springen · Umschalt + ←/→: 0,1 s · ↑/↓: Lautstärke ±5 % · M: stummschalten · Pos1/Ende: Anfang/Ende. Textfelder und native Bedienelemente behalten ihre eigenen Tasten."
+    "shortcutHelp": "Leertaste: Wiedergabe/Pause · ←/→: 1 s springen · Umschalt + ←/→: 0,1 s · ↑/↓: Lautstärke ±5 % · M: stummschalten · Pos1/Ende: Anfang/Ende. Textfelder behalten ihre Tasten. Mit Tab fokussierte Bedienelemente behalten ihre native Aktivierung und Schieberegler-Schritte."
   },
   "games": {
     "title": "Erkannte Spiele",

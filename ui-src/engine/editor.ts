@@ -153,6 +153,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let stageFailed = false;
   let explicitSeek = false;
   const pendingSeeks = new WeakMap<HTMLMediaElement, number>();
+  const buffering = new WeakSet<HTMLMediaElement>();
+  let activeVideo: TrackState[] = [];
+  let activeAudio: Array<{it: EdItem; media: HTMLAudioElement}> = [];
   const scrub = createSeekScheduler(at => seek(at));
 
   let raf: number | null = null;
@@ -636,6 +639,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     });
     poolKey = '';
     master = null;
+    activeVideo = []; activeAudio = [];
     Object.keys(audioPool).forEach(id => {
       const a = audioPool[id];
       a.pause();
@@ -771,6 +775,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       if (!el) return;
       el._key = n.key;
       pendingSeeks.delete(el);
+      buffering.delete(el);
       el.src = playbackUrl(clipOf(n.it));
       warmStart(el, n.parkAt);
       n.el = el;
@@ -801,9 +806,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
    */
   function seekVideo(v: HTMLMediaElement, t: number, tol?: number) {
     if (v.readyState < 1 || v.seeking) {
-      if (explicitSeek || !playing) pendingSeeks.set(v, t);
+      if (explicitSeek || !playing || !pendingSeeks.has(v)) pendingSeeks.set(v, t);
       return;
     }
+    // Ordinary drift correction must not replace a newer explicit request.
+    if (!explicitSeek && pendingSeeks.has(v)) t = pendingSeeks.get(v)!;
     pendingSeeks.delete(v);
     if (Math.abs(v.currentTime - t) > (explicitSeek || !playing ? .000001 : (tol ?? ED_DRIFT))) {
       try {
@@ -817,16 +824,31 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function watchMediaSeeking(media: HTMLMediaElement) {
     const ready = () => {
       if (!mounted || !media.getAttribute('src')) return;
+      buffering.delete(media);
       const target = pendingSeeks.get(media);
       if (target !== undefined && !media.seeking && media.readyState >= 1) {
         pendingSeeks.delete(media);
         if (Math.abs(media.currentTime - target) > .000001) {media.currentTime = target; return;}
       }
-      if (!playing) renderPreviewFrame(false);
+      renderPreviewFrame(false);
+    };
+    const wait = () => {
+      if (!mounted || !media.getAttribute('src') || media.readyState >= 3) return;
+      buffering.add(media);
+      renderPreviewFrame(false);
     };
     media.addEventListener('loadedmetadata', ready);
     media.addEventListener('seeked', ready);
+    media.addEventListener('canplay', ready);
+    media.addEventListener('playing', ready);
+    media.addEventListener('waiting', wait);
+    media.addEventListener('stalled', wait);
   }
+
+  const mediaReady = (media: HTMLMediaElement) => media.readyState >= 2 && !media.seeking &&
+    !pendingSeeks.has(media) && !buffering.has(media);
+
+  const visibleMedia = () => activeVideo.flatMap(st => st.prev ? [st.cur,st.prev] : [st.cur]);
 
   const playTol = () => (playing ? 0.45 : ED_DRIFT);
 
@@ -908,17 +930,21 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     });
 
     const desired = (it.offset || 0) + (t - it.start);
+    if (explicitSeek) {
+      cur._warmUntil = 0;
+      window.clearTimeout(cur._warmTimer);
+      cur._warmTimer = undefined;
+    }
     cur.volume = monitorVolume;
-    if (playing && !audioWaiting) {
+    if (playing) {
       cur._warmUntil = 0;
       window.clearTimeout(cur._warmTimer);
       cur._warmTimer = undefined;
       cur.muted = monitorMuted || Boolean(it.muted);
-      if (cur.paused) void cur.play().catch(() => {});
       // The clock reads its time from the master element, so correcting that
       // element is chasing its own tail. Only a fresh cut, or a track playing
       // underneath the master, needs a correction.
-      if (fresh || promoted) seekVideo(cur, desired, ED_DRIFT);
+      if (explicitSeek || fresh || promoted) seekVideo(cur, desired, ED_DRIFT);
       else if (!isMaster) seekVideo(cur, desired, playTol());
     } else if (warming(cur)) {
       cur._parkAt = desired;
@@ -997,14 +1023,13 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       sourceDur(prev) - 0.05,
     );
     seekVideo(el, pd, playTol());
-    if (playing && !audioWaiting && el.paused) void el.play().catch(() => {});
-    else if ((!playing || audioWaiting) && !el.paused) el.pause();
+    if (!playing && !el.paused) el.pause();
   }
 
   // ── audio items ─────────────────────────────────────────────────
   function syncAudio(t: number) {
     const active = new Set<string>();
-    const audible: HTMLAudioElement[] = [];
+    activeAudio = [];
     project!.items.forEach(it => {
       if (it.kind !== 'audio' || it.muted || (it.volume ?? 1) === 0) return;
       if (t < it.start || t >= it.start + it.dur || missing.has(it.clipId!)) return;
@@ -1033,13 +1058,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       a.volume = Math.max(0, Math.min(1, it.volume ?? 1)) * monitorVolume;
       a.muted = monitorMuted;
       seekVideo(a, (it.offset || 0) + (t - it.start), playTol());
-      audible.push(a);
+      activeAudio.push({it,media:a});
     });
-    audioWaiting = audible.some(a => a.readyState < 2 && !a.error);
-    audible.forEach(a => {
-      if (playing && !audioWaiting && a.paused) void a.play().catch(() => {});
-      else if ((!playing || audioWaiting) && !a.paused) a.pause();
-    });
+    audioWaiting = activeAudio.some(({media}) => !media.error && !mediaReady(media));
     Object.keys(audioPool).forEach(id => {
       if (!active.has(id)) {
         audioPool[id].pause();
@@ -1206,37 +1227,19 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   // ── clock ───────────────────────────────────────────────────────
   function setPlaying(next: boolean) {
     if (next && end() <= 0) return;
-    if (next && playhead >= end() - 0.01) playhead = 0;
+    if (next && playhead >= end() - 0.01) seek(0);
     playing = next;
     emit();
     if (!next) {
+      if (raf !== null) cancelAnimationFrame(raf);
+      raf = null;
       renderPreviewFrame(false);
       return;
     }
-    if (raf) return;
-
-    // Let the decoders spin up before the clock starts, otherwise the first
-    // half second runs ahead of the picture and looks like a stutter.
+    if (raf !== null) return;
     renderPreviewFrame(true);
-    const start = () => {
-      if (!playing || raf) return;
-      lastTick = performance.now();
-      raf = requestAnimationFrame(tick);
-    };
-    const lead = master && master.cur;
-    if (lead && lead.readyState < 3) {
-      let fired = false;
-      const go = () => {
-        if (fired) return;
-        fired = true;
-        start();
-      };
-      lead.addEventListener('playing', go, {once: true});
-      lead.addEventListener('canplaythrough', go, {once: true});
-      window.setTimeout(go, 400);
-    } else {
-      start();
-    }
+    lastTick = performance.now();
+    raf = requestAnimationFrame(tick);
   }
 
   function tick(now: number) {
@@ -1247,34 +1250,22 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       emit();
       return;
     }
-    if (audioWaiting) {
-      lastTick = now;
-      renderPreviewFrame(false);
-      if (audioWaiting) {
-        raf = requestAnimationFrame(tick);
-        return;
-      }
-    }
     const total = end();
     const dt = Math.min(0.25, (now - lastTick) / 1000);
     lastTick = now;
-    playhead = Math.min(total, playhead + dt * playbackRate);
-    renderPreviewFrame(false);
-
-    // The video, not the wall clock, is the timebase while a clip is on
-    // screen: chasing wall time forced a corrective seek every few frames,
-    // which is what stuttered. Wall time only carries across gaps and cuts.
-    const m = master;
-    if (m && !m.cur.paused && !m.cur.seeking && m.cur.readyState >= 2) {
-      const vt = m.it.start + (m.cur.currentTime - (m.it.offset || 0));
-      if (
-        vt >= m.it.start &&
-        vt <= m.it.start + m.it.dur &&
-        Math.abs(vt - playhead) < 0.5
-      ) {
-        playhead = Math.min(total, vt);
-      }
+    const waiting = [...visibleMedia(),...activeAudio.map(a=>a.media)].some(media=>!mediaReady(media));
+    // An active decoder is the clock even when its timestamp stops changing.
+    // Wall time is only valid in genuine gaps, never as a buffering fallback.
+    if (!waiting) {
+      const lead = master ? {it:master.it,media:master.cur} : activeAudio[0];
+      if (lead) {
+        if (!lead.media.paused || lead.media.ended) {
+          const at = lead.it.start + lead.media.currentTime - (lead.it.offset || 0);
+          playhead = Math.min(total,Math.max(lead.it.start,Math.min(lead.it.start+lead.it.dur,at)));
+        }
+      } else playhead = Math.min(total,playhead + dt * playbackRate);
     }
+    renderPreviewFrame(false);
 
     updatePlayheadDom();
     emit();
@@ -1304,6 +1295,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       return st;
     });
     master = m;
+    activeVideo = states.filter((st):st is TrackState => Boolean(st));
     states.forEach(st => syncOutgoing(st, t));
     applyTransitionStyles(states, t);
     renderTexts(t);
@@ -1311,10 +1303,13 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const anyVideo = states.some(st => st);
     const nextEmpty = !anyVideo;
     const nextFailed = states.some(st => Boolean(st?.cur._failed || st?.cur.error));
-    const nextPreparing = audioWaiting || states.some(st => {
-      if (!st) return false;
-      return !st.cur._failed && !st.cur.error && st.cur.readyState < 2;
+    const media = [...visibleMedia(),...activeAudio.map(a=>a.media)];
+    const waiting = audioWaiting || media.some(media=>!mediaReady(media));
+    media.forEach(media=>{
+      if (playing && !waiting) {if(media.paused && !media.ended) void media.play().catch(()=>{});}
+      else if (!media.paused && (playing || media.tagName==='AUDIO')) media.pause();
     });
+    const nextPreparing = !nextFailed && (waiting || playing && media.some(media=>media.paused && !media.ended));
     if (nextEmpty !== stageEmpty || nextPreparing !== preparingNow || nextFailed !== stageFailed) {
       stageEmpty = nextEmpty;
       preparingNow = nextPreparing;
@@ -1339,6 +1334,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function seek(t: number) {
     playhead = Math.max(0, Math.min(totalSec(), t));
+    lastTick = performance.now();
     updatePlayheadDom();
     explicitSeek = true;
     try {renderPreviewFrame(true);} finally {explicitSeek = false;}
@@ -1472,7 +1468,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         <span class="ed-rail-label">${escHtml(tr.label)}</span>
         <span class="ed-rail-type">${tr.type.slice(0, 3).toUpperCase()}</span>
       </div>
-      <div class="ed-lane ${tr.type}" data-lane="${escAttr(tr.id)}" style="width:${totalW}px">
+      <div class="ed-lane ${tr.type}" tabindex="0" data-lane="${escAttr(tr.id)}" style="width:${totalW}px">
         ${rendered}${junctions}
       </div>
     </div>`;
@@ -1482,7 +1478,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     box.timelineCanvas.innerHTML = `
     <div class="ed-ruler-row">
       <div class="ed-rail-corner"></div>
-      <div id="ed-ruler" style="width:${totalW}px">
+      <div id="ed-ruler" tabindex="0" style="width:${totalW}px">
         ${ticks}
         <div id="ed-ruler-cursor"></div>
       </div>
@@ -1504,23 +1500,33 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   // ── timeline wiring ─────────────────────────────────────────────
+  function startScrub(surface: HTMLElement, event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    surface.focus({preventScroll:true});
+    capture(surface,event);
+    const at = (ev: PointerEvent) => (ev.clientX-surface.getBoundingClientRect().left)/pps;
+    const move = (ev: PointerEvent) => scrub.seek(at(ev),false);
+    const finish = (ev: PointerEvent) => {
+      if (ev.type==='pointerup') scrub.seek(at(ev));
+      else scrub.cancel();
+      surface.removeEventListener('pointermove',move);
+      surface.removeEventListener('pointerup',finish);
+      surface.removeEventListener('pointercancel',finish);
+      surface.removeEventListener('lostpointercapture',finish);
+    };
+    scrub.seek(at(event));
+    surface.addEventListener('pointermove',move);
+    surface.addEventListener('pointerup',finish);
+    surface.addEventListener('pointercancel',finish);
+    surface.addEventListener('lostpointercapture',finish);
+  }
+
   function wireTimeline() {
     if (!box) return;
     const ruler = box.timelineCanvas.querySelector<HTMLElement>('#ed-ruler');
     if (ruler) {
-      ruler.addEventListener('pointerdown', e => {
-        capture(ruler, e);
-        const rect = ruler.getBoundingClientRect();
-        const upd = (ev: PointerEvent) => scrub.seek((ev.clientX - rect.left) / pps, false);
-        scrub.seek((e.clientX - rect.left) / pps);
-        const up = (ev: PointerEvent) => {
-          scrub.seek((ev.clientX - rect.left) / pps);
-          ruler.removeEventListener('pointermove', upd);
-          ruler.removeEventListener('pointerup', up);
-        };
-        ruler.addEventListener('pointermove', upd);
-        ruler.addEventListener('pointerup', up);
-      });
+      ruler.addEventListener('pointerdown', e => startScrub(ruler,e));
     }
 
     box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-rail').forEach(rail => {
@@ -1530,7 +1536,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-lane').forEach(lane => {
       const trackId = lane.dataset.lane!;
       lane.addEventListener('pointerdown', e => {
-        if (e.target === lane) select(null);
+        if (e.target === lane && e.button === 0) {select(null);startScrub(lane,e);}
       });
       lane.addEventListener('contextmenu', e => {
         if (e.target === lane) openTrackMenu(e, trackId);
@@ -2052,6 +2058,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     stage.addEventListener('pointerdown', e => {
       const target = e.target as HTMLElement;
       if (target === stage || target.tagName === 'VIDEO') select(null);
+    });
+    stage.addEventListener('click', e => {
+      const target = e.target as HTMLElement;
+      if (target === stage || target.tagName === 'VIDEO') setPlaying(!playing);
     });
   }
 
