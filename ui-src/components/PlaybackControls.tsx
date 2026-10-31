@@ -55,6 +55,7 @@ export function VolumeControl({
       </button>
       <input
         type="range"
+        data-playback-control="volume"
         className="player-volume-range"
         min={0}
         max={1}
@@ -126,7 +127,7 @@ export function PlaybackTime({current, duration}: {current: number; duration: nu
   return <span className="mono player-tc">{formatDuration(current, true)} / {formatDuration(duration, true)}</span>;
 }
 export function VideoLoading({preparing}: {preparing: boolean}) {
-  return preparing ? <div className="video-overlay" onClick={event => event.stopPropagation()}>
-    <span className="video-spinner" aria-hidden="true"/><p>{t('viewer.preparingPreview')}</p>
+  return preparing ? <div className="video-overlay" role="status" onClick={event => event.stopPropagation()}>
+    <span className="video-spinner" aria-hidden="true"/><p>{t('viewer.loadingPreview')}</p>
   </div> : null;
 }

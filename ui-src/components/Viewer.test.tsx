@@ -20,8 +20,9 @@ async function renderViewer(shown=clip,renameTransition?:{from:string;to:string}
  onHighlightsChange={vi.fn()} onSelect={selected} onClose={closed} onTrim={vi.fn()} trimOpen={false} onShare={vi.fn()}
  onShareMenu={vi.fn()} shareLabel="share" onReveal={vi.fn()} onDelete={vi.fn()} onOpenExternally={vi.fn()} onRename={renamed} notify={vi.fn()}/>));}
 async function mount(){await renderViewer();
+ Object.defineProperty(media(),'videoWidth',{value:640,configurable:true});Object.defineProperty(media(),'readyState',{value:4,configurable:true});
  Object.defineProperty(media(),'duration',{value:20,configurable:true});
- await act(async()=>media().dispatchEvent(new Event('loadedmetadata')));media().currentTime=10;
+ await act(async()=>{media().dispatchEvent(new Event('loadedmetadata'));media().dispatchEvent(new Event('loadeddata'));});media().currentTime=10;
 }
 describe('viewer keyboard preference',()=>{
  it('defaults to playback navigation with fine seek, clamping, volume and unchanged playback state',async()=>{
@@ -94,4 +95,27 @@ describe('viewer F2 and temporary speed',()=>{
    await renderViewer({...clip,slug:'two',video_url:'/v/two?v=2'});expect(media().playbackRate).toBe(1.5);
   }finally{vi.useRealTimers();}
  });
+});
+
+it('keeps playback keys after mouse focus on volume and buttons in inline/fullscreen mode',async()=>{
+ await mount();await act(async()=>media().pause());
+ const press=async(target:HTMLElement,name:string)=>act(async()=>{target.dispatchEvent(new KeyboardEvent('keydown',{key:name,bubbles:true,cancelable:true}));target.dispatchEvent(new KeyboardEvent('keyup',{key:name,bubbles:true,cancelable:true}));});
+ const pointerFocus=async(target:HTMLElement)=>act(async()=>{target.dispatchEvent(new MouseEvent('pointerdown',{bubbles:true,button:0}));target.focus();});
+ const volume=container.querySelector<HTMLInputElement>('.player-volume-range')!;await pointerFocus(volume);await press(volume,' ');expect(media().paused).toBe(false);
+ await press(volume,' ');expect(media().paused).toBe(true);await press(volume,'ArrowRight');expect(media().currentTime).toBe(11);
+ const button=container.querySelector<HTMLElement>('.player-volume button')!;await pointerFocus(button);await press(button,' ');expect(media().paused).toBe(false);
+ await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="Fill the window"]')!.click());
+ const expanded=container.querySelector<HTMLInputElement>('.viewer-expanded-bar .player-volume-range')!;await pointerFocus(expanded);await press(expanded,' ');expect(media().paused).toBe(true);
+});
+
+it('seeks and scrubs both viewer timelines immediately, updates readout, and clears buffering feedback',async()=>{
+ await mount();await act(async()=>media().pause());
+ const pointer=async(track:HTMLElement,type:string,x:number)=>act(async()=>{const event=new MouseEvent(type,{bubbles:true,button:0,clientX:x});Object.defineProperty(event,'pointerId',{value:1});track.dispatchEvent(event);});
+ const track=container.querySelector<HTMLElement>('.viewer-timeline')!;
+ await pointer(track,'pointerdown',500);expect(media().currentTime).toBe(10);expect(document.activeElement).toBe(track);
+ await pointer(track,'pointermove',750);await pointer(track,'pointerup',250);expect(media().currentTime).toBe(5);expect(container.querySelector('.viewer-progress')!.getAttribute('style')).toContain('25%');
+ await act(async()=>media().dispatchEvent(new Event('waiting')));expect(container.querySelector('[role=status]')?.textContent).toContain('Loading preview');
+ await act(async()=>media().dispatchEvent(new Event('canplay')));expect(container.querySelector('[role=status]')).toBeNull();
+ await act(async()=>container.querySelector<HTMLButtonElement>('button[aria-label="Fill the window"]')!.click());
+ const fullscreen=container.querySelector<HTMLElement>('.viewer-expanded-bar .player-track')!;await pointer(fullscreen,'pointerdown',750);expect(media().currentTime).toBe(15);await pointer(fullscreen,'pointerup',500);expect(media().currentTime).toBe(10);expect(media().paused).toBe(true);
 });

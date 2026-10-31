@@ -157,3 +157,11 @@ Escape clears/exits selection, and F2 renames the one selected/focused media ite
 Checkboxes and the Select/Select All/Deselect controls provide pointer alternatives.
 Text inputs retain their own keys. See [library management](LIBRARY.md) for exact
 titles, reviewed bulk actions and processing indicators.
+
+## Playback after control clicks
+
+Mouse-clicked playback buttons and volume controls keep Space and other transport
+shortcuts available to the active player. Tab-focused controls keep native button
+activation and volume-slider steps; text/inspector fields keep normal typing keys.
+The Viewer includes its detached transport bar in this scope. See
+[playback synchronization](PLAYBACK.md) for decoder, buffering and timeline details.

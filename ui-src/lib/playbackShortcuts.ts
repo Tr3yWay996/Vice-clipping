@@ -6,12 +6,33 @@ export interface PlaybackShortcutContext {
   priority: number;
   handle: (event: KeyboardEvent) => boolean;
   boost?: () => PlaybackBoost | null;
+  /** Detached transport chrome can sit beside its modal rather than inside it. */
+  controls?: () => HTMLElement | null;
 }
 const contexts: PlaybackShortcutContext[] = [];
+const containsControl = (context:PlaybackShortcutContext | undefined, control:Element) =>
+  Boolean(context?.root()?.contains(control) || context?.controls?.()?.contains(control));
+// Pointer-focused controls should not capture the next playback shortcut.
+// Tab-focused buttons/sliders retain their native keyboard activation/steps.
+let pointerControl: Element | null = null;
+const pointer = (event: PointerEvent) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const control = target?.closest('button, a, summary, [role="button"], [role="slider"], input[type="range"]');
+  pointerControl = control && containsControl(owner(),control) ? control : null;
+};
+const nativeSpaceControl = (target: Element | null) => {
+  const control = target?.closest('button:not([role="slider"]), a, summary, [role="button"]');
+  return Boolean(control && control !== pointerControl);
+};
 
 /** Native editing and accessibility controls keep their own keys. */
 export function ownsKeyboardInput(event: KeyboardEvent): boolean {
   const target = event.target instanceof Element ? event.target : null;
+  if (event.isComposing) return true;
+  const volume = target?.closest('input[type="range"][data-playback-control="volume"]');
+  if (volume && event.type.startsWith('key') && containsControl(owner(),volume)) {
+    return pointerControl !== volume && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key);
+  }
   return Boolean(event.isComposing || target?.closest(
     'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], [role="listbox"], [role="menu"], [role="switch"], [role="checkbox"], [role="radio"], [role="tablist"]',
   ));
@@ -29,7 +50,10 @@ let press: {owner: PlaybackShortcutContext; state: ReturnType<typeof createSpace
 const cancelPress = () => {press?.state.finish(true); press = null;};
 const checkOwner = () => {if (press && (owner() !== press.owner || document.querySelector('[role="listbox"], [role="menu"]'))) cancelPress();};
 const visibility = () => {if (document.hidden) cancelPress();};
-const focus = (event: FocusEvent) => {if (ownsKeyboardInput(event as unknown as KeyboardEvent)) cancelPress();};
+const focus = (event: FocusEvent) => {
+  if (pointerControl && !pointerControl.contains(event.target as Node)) pointerControl = null;
+  if (ownsKeyboardInput(event as unknown as KeyboardEvent)) cancelPress();
+};
 const release = (event: KeyboardEvent) => {
   if ((event.code === 'Space' || event.key === ' ') && press) {
     const current = press; press = null;
@@ -43,6 +67,7 @@ const wheel = (event: WheelEvent) => {
 };
 const observer = typeof MutationObserver === 'undefined' ? null : new MutationObserver(checkOwner);
 function dispatch(event: KeyboardEvent) {
+  if (event.key === 'Tab') {pointerControl = null; cancelPress();}
   checkOwner();
   if (event.defaultPrevented || ownsKeyboardInput(event)) return;
   if (document.querySelector('[role="listbox"], [role="menu"]')) return;
@@ -51,7 +76,7 @@ function dispatch(event: KeyboardEvent) {
   const target = event.target instanceof Element ? event.target : null;
   const space = event.key === ' ' || event.code === 'Space';
   const boost = space && !event.ctrlKey && !event.altKey && !event.metaKey &&
-    !target?.closest('button:not([role="slider"]), a, summary, [role="button"]') ? context.boost?.() : null;
+    !nativeSpaceControl(target) ? context.boost?.() : null;
   if (boost) {
     if (!event.repeat && !press) press = {owner:context, state:createSpacePress(boost, () => {
       // The original keydown is consumed now; a tap is dispatched on release.
@@ -71,6 +96,7 @@ export function bindPlaybackShortcuts(context: PlaybackShortcutContext): () => v
     document.addEventListener('wheel', wheel, {passive:false});
     document.addEventListener('visibilitychange', visibility);
     document.addEventListener('focusin', focus);
+    document.addEventListener('pointerdown', pointer, true);
     window.addEventListener('blur', cancelPress);
     observer?.observe(document.body, {childList:true, subtree:true, attributes:true, attributeFilter:['hidden','data-closing','aria-modal']});
   }
@@ -86,6 +112,8 @@ export function bindPlaybackShortcuts(context: PlaybackShortcutContext): () => v
       document.removeEventListener('wheel', wheel);
       document.removeEventListener('visibilitychange', visibility);
       document.removeEventListener('focusin', focus);
+      document.removeEventListener('pointerdown', pointer, true);
+      pointerControl = null;
       window.removeEventListener('blur', cancelPress);
       observer?.disconnect();
     }
@@ -93,12 +121,14 @@ export function bindPlaybackShortcuts(context: PlaybackShortcutContext): () => v
 }
 
 export function usePlaybackShortcuts(active: boolean, root: RefObject<HTMLElement | null>, priority: number,
-  handle: (event: KeyboardEvent) => boolean, boost?: () => PlaybackBoost | null, scope?: unknown): void {
+  handle: (event: KeyboardEvent) => boolean, boost?: () => PlaybackBoost | null, scope?: unknown,
+  controls?: RefObject<HTMLElement | null>): void {
   const latest = useRef(handle);
   latest.current = handle;
   const latestBoost = useRef(boost); latestBoost.current = boost;
   useEffect(() => active ? bindPlaybackShortcuts({root: () => root.current, priority,
-    handle: event => latest.current(event), boost: () => latestBoost.current?.() ?? null}) : undefined, [active, root, priority, scope]);
+    controls:()=>controls?.current ?? null,
+    handle: event => latest.current(event), boost: () => latestBoost.current?.() ?? null}) : undefined, [active, root, priority, scope, controls]);
 }
 
 export interface PlaybackActions {
@@ -121,7 +151,7 @@ export function playbackShortcut(event: KeyboardEvent, actions: PlaybackActions)
   const key = event.key.toLowerCase();
   const target = event.target instanceof Element ? event.target : null;
   if (key === ' ' || event.code === 'Space') {
-    if (target?.closest('button:not([role="slider"]), a, summary, [role="button"]')) return false;
+    if (nativeSpaceControl(target)) return false;
     if (!event.repeat) actions.toggle();
   } else if (key === 'f2' && actions.rename) {
     if (!event.repeat) actions.rename();

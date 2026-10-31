@@ -257,6 +257,8 @@
     "whatsNew": "Nouveautés"
   },
   "viewer": {
+    "loadingPreview": "Chargement de l’aperçu",
+    "seekTimeline": "Chronologie de lecture",
     "errReveal": "Impossible d'ouvrir le gestionnaire de fichiers",
     "errSystemPlayer": "Impossible d'ouvrir le lecteur système",
     "clipDeleted": "Clip supprimé",
@@ -1000,7 +1002,7 @@
   },
   "playback": {
     "shortcuts": "Raccourcis clavier",
-    "shortcutHelp": "Espace : lecture/pause · ←/→ : avancer ou reculer de 1 s · Maj + ←/→ : 0,1 s · ↑/↓ : volume ±5 % · M : couper le son · Début/Fin : début/fin. Les champs de texte et les contrôles natifs conservent leurs touches."
+    "shortcutHelp": "Espace : lecture/pause · ←/→ : avancer ou reculer de 1 s · Maj + ←/→ : 0,1 s · ↑/↓ : volume ±5 % · M : couper le son · Début/Fin : début/fin. Les champs de texte gardent leurs touches. Les contrôles ciblés avec Tab gardent leur activation et les pas natifs des curseurs."
   },
   "games": {
     "title": "Jeux détectés",
