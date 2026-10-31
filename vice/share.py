@@ -2069,15 +2069,11 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
         raise ValueError('Unsupported processing operation')
 
     async def _api_clips(self, _: web.Request) -> web.Response:
-        items = [
-            (slug, path) for slug, path in sorted(
-                self._clips.items(),
-                key=lambda kv: kv[1].stat().st_mtime if kv[1].exists() else 0,
-                reverse=True,
-            )
-            if path.exists()
-        ]
-        metas = {slug: await self._get_meta(slug, path) for slug, path in items}
+        items = self._library_items('clip')
+        metas = {}
+        for slug,path in items:
+            try:metas[slug] = await self._get_meta(slug,path)
+            except FileNotFoundError:continue
 
         sem = asyncio.Semaphore(3)
         async def _ensure(slug: str, path: Path) -> None:
@@ -2085,13 +2081,16 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
             if thumb.exists() and thumb.stat().st_size > 0:
                 return
             async with sem:
-                await _make_thumb(path, duration=metas[slug].get("duration", 0))
+                await _make_thumb(path, duration=metas.get(slug,{}).get("duration", 0))
         await asyncio.gather(
             *[_ensure(slug, path) for slug, path in items],
             return_exceptions=True,
         )
 
-        result = [self._clip_json(slug, path, metas[slug]) for slug, path in items]
+        # Probing/thumbnailing yields to renames, restores and deletions. Build
+        # the response from the current index, never the obsolete path snapshot.
+        result = [self._clip_json(slug,path,self._meta.get(slug,metas.get(slug,{})))
+                  for slug,path in self._library_items('clip')]
         return web.json_response({"clips": result})
 
     async def _api_clip_info(self, req: web.Request) -> web.Response:
@@ -2429,14 +2428,7 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
         })
 
     async def _api_images(self, _: web.Request) -> web.Response:
-        items = [
-            (slug, path) for slug, path in sorted(
-                self._images.items(),
-                key=lambda kv: kv[1].stat().st_mtime if kv[1].exists() else 0,
-                reverse=True,
-            )
-            if path.exists()
-        ]
+        items = self._library_items('image')
 
         sem = asyncio.Semaphore(3)
         async def _ensure(path: Path) -> None:
@@ -2446,7 +2438,10 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
                 await _make_thumb(path)
         await asyncio.gather(*[_ensure(path) for _, path in items], return_exceptions=True)
 
-        result = [await self._image_json(slug, path) for slug, path in items]
+        for slug,path in items:
+            try:await self._image_json(slug,path)
+            except FileNotFoundError:continue
+        result = [self._image_basic_json(slug,path) for slug,path in self._library_items('image')]
         return web.json_response({"images": result})
 
     async def _api_image_delete(self, req: web.Request) -> web.Response:

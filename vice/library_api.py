@@ -45,6 +45,14 @@ class LibraryAPI:
         entry = self.library.ensure(path, kind)
         return {'library_id':entry['id'], 'display_title':self.library.title(entry), 'content_revision':entry['revision']}
 
+    def _library_items(self, kind):
+        index = self._clips if kind=='clip' else self._images
+        items=[]
+        for slug,path in index.items():
+            try:items.append((slug,path,path.stat().st_mtime))
+            except FileNotFoundError:continue
+        return [(slug,path) for slug,path,_ in sorted(items,key=lambda item:item[2],reverse=True)]
+
     def _library_source(self, mid):
         entry = self.library.get(mid)
         if not entry or entry.get('trashed') or entry.get('replaced'):
@@ -125,7 +133,9 @@ class LibraryAPI:
                         destination=_audio_preview_path(target,int(match.group(1)))
                     try: cache.replace(destination)
                     except OSError: pass  # Cache misses are recoverable; media stays safe.
-                index.pop(slug, None);index[new_slug] = target
+                # Retain insertion order for recordings with equal timestamps.
+                renamed_index={new_slug if key==slug else key:target if key==slug else value for key,value in index.items()}
+                index.clear();index.update(renamed_index)
                 old_key = image_slug(slug) if kind == 'image' else slug
                 new_key = image_slug(new_slug) if kind == 'image' else new_slug
                 self.games.rename_clip(old_key, new_key)

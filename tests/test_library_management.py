@@ -105,6 +105,39 @@ class LibraryTests(unittest.IsolatedAsyncioTestCase):
         event=next(call.args[0] for call in self.server.broadcast.call_args_list if call.args[0]['type']=='image_renamed')
         self.assertEqual(event['old_slug'],'Shot')
 
+    async def test_clip_list_in_flight_during_rename_returns_current_identity_and_title(self):
+        gate,probing=asyncio.Event(),asyncio.Event()
+        async def held_probe(path):
+            probing.set();await gate.wait()
+            return {'duration':4,'vcodec':'h264'}
+        with mock.patch('vice.share._ffprobe',new=held_probe),mock.patch('vice.share._make_thumb',new=mock.AsyncMock()):
+            pending=asyncio.create_task(self.server._api_clips(None))
+            await asyncio.wait_for(probing.wait(),2)
+            await self.server._rename_media('clip','First','Renamed while loading!')
+            gate.set();response=await asyncio.wait_for(pending,2)
+        items=json.loads(response.text)['clips']
+        self.assertEqual([item['library_id'] for item in items],self.ids)
+        self.assertEqual(items[0]['display_title'],'Renamed while loading!')
+        self.assertEqual(items[0]['duration'],4)
+        self.assertNotIn('First',[item['slug'] for item in items])
+
+    async def test_image_list_in_flight_during_rename_keeps_dimensions_and_current_title(self):
+        path=self.root/'Shot.png';path.write_bytes(b'image');self.server._images['Shot']=path
+        mid=self.server.library.ensure(path,'image')['id']
+        gate,probing=asyncio.Event(),asyncio.Event()
+        async def held_probe(path):
+            probing.set();await gate.wait()
+            return {'width':640,'height':480}
+        with mock.patch('vice.share.probe_media',new=held_probe),mock.patch('vice.share._make_thumb',new=mock.AsyncMock()):
+            pending=asyncio.create_task(self.server._api_images(None))
+            await asyncio.wait_for(probing.wait(),2)
+            await self.server._rename_media('image','Shot','Renamed screenshot!')
+            gate.set();response=await asyncio.wait_for(pending,2)
+        items=json.loads(response.text)['images']
+        self.assertEqual(len(items),1);self.assertEqual(items[0]['library_id'],mid)
+        self.assertEqual(items[0]['display_title'],'Renamed screenshot!')
+        self.assertEqual((items[0]['width'],items[0]['height']),(640,480))
+
     async def test_preview_replace_prefix_suffix_number_and_pattern_match_applied_names(self):
         cases=[('replace',{'find':'i','replace':' ? '},['F ? rst','Second','Th ? rd']),('prefix',{'text':'🎮 '},['🎮 First','🎮 Second','🎮 Third']),('suffix',{'text':' !'},['First !','Second !','Third !']),('number',{'prefix':'Clip ','width':3,'start':2,'suffix':'?'},['Clip 002?','Clip 003?','Clip 004?']),('pattern',{'pattern':'{title} [{index:03d}] {date}','start':1},['First [001] 2001-09-09','Second [002] 2001-09-09','Third [003] 2001-09-09'])]
         for mode,options,expected in cases:

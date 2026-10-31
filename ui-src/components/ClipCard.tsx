@@ -149,8 +149,7 @@ export function ClipCard({
       onClick={e => {
         // The whole card opens the clip, not just the thumbnail. Anything that
         // already does something of its own is left alone: the action row, the
-        // rename field, and the title, which takes a double-click to rename and
-        // would never get its second click if the first one opened the viewer.
+        // rename field, and the title, whose single click begins editing.
         if (renaming) return;
         const target = e.target as HTMLElement;
         if (target.closest('button, a, input, textarea, .clip-name')) return;
