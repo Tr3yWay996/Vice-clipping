@@ -38,7 +38,7 @@ export function InlineRename({
   const submit = () => {
     if (done.current) return;
     done.current = true;
-    const next = value.trim() || emptyFallback || '';
+    const next = value || emptyFallback || '';
     if (!next || next === initial) onCancel();
     else onSubmit(next);
   };

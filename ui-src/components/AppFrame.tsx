@@ -1,3 +1,5 @@
+import {ownsKeyboardInput} from '../lib/playbackShortcuts';
+import {LibraryToolbar} from './LibraryToolbar';
 import {createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
 
 import {api} from '../lib/api';
@@ -38,7 +40,7 @@ const HomeLayoutContext = createContext<HomeLayout>('narrow');
 export const useHomeLayout = () => useContext(HomeLayoutContext);
 
 export function AppFrame({children}: {children: ReactNode}) {
-  const {state} = useStore();
+  const {state,dispatch} = useStore();
   // Both of these screens have their own controls in the bottom right.
   const quitHidden = state.view === 'editor' || state.view === 'settings';
   const [tutorial, setTutorial] = useState(false);
@@ -127,11 +129,16 @@ export function AppFrame({children}: {children: ReactNode}) {
         onShowWhatsNew={notedVersion ? () => setWhatsNew(notedVersion) : undefined}
       />
       <Melt />
-      <div className="frame-content" ref={contentRef}
+      <div className="frame-content" ref={contentRef} onKeyDownCapture={event=>{
+        if(event.key==='Escape' && state.selectionMode && ['home','clips','images'].includes(state.view) && !ownsKeyboardInput(event.nativeEvent) && !document.querySelector('[aria-modal=true]')){
+          event.preventDefault();event.stopPropagation();dispatch({type:'clearSelection'});
+        }
+      }}
         data-home-wide={state.view === 'home' && homeLayout !== 'narrow' || undefined}
         data-home-rail={state.view === 'home' && homeLayout === 'rail' || undefined}
         data-native={IS_NATIVE || undefined}>
         <Banners />
+        <LibraryToolbar/>
         <HomeLayoutContext.Provider value={homeLayout}>{children}</HomeLayoutContext.Provider>
       </div>
       <StatusIsland />

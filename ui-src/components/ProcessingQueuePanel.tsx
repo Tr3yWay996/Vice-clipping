@@ -18,10 +18,10 @@ export function LiquidProgress({job}: {job: ProcessingJob}) {
   </div>;
 }
 
-function JobRow({job}: {job: ProcessingJob}) {
+export function JobRow({job}: {job: ProcessingJob}) {
   const {state, notify} = useStore();
   const [busy, setBusy] = useState(false);
-  const clip = state.clips.find(clip => clip.name === job.name);
+  const clip = state.clips.find(clip => Boolean(clip.library_id && job.source_media_ids?.includes(clip.library_id)));
   const active = ['queued', 'processing', 'paused'].includes(job.status);
   const control = async (action: string) => {
     setBusy(true);
@@ -33,7 +33,7 @@ function JobRow({job}: {job: ProcessingJob}) {
     disabled={busy || disabled} title={title} onClick={() => void control(action)}>{t(`queue.${action}`)}</button>;
   return <article className="queue-job" data-status={job.status} aria-label={job.name}>
     <header>{clip?.thumb_url ? <img src={clip.thumb_url} alt=""/> : null}
-      <div><b title={job.name}>{job.name}</b><span>{t(`queue.operation.${job.operation}`)} · {t(`queue.state.${job.status}`)}</span></div>
+      <div><b title={job.name}>{job.name}</b><span>{t(`queue.operation.${job.operation}`)}{job.mode?` · ${t(`library.jobMode.${job.mode}`)}`:''} · {t(`queue.state.${job.status}`)}</span></div>
     </header>
     {(active || job.status === 'completed') ? <LiquidProgress job={job}/> : null}
     {job.status === 'processing' || job.status === 'paused' ? <p className="queue-timing">

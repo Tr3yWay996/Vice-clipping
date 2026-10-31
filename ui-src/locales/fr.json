@@ -126,7 +126,7 @@
     "unreadableNote": "{reason}. Le fichier est toujours sur le disque.",
     "unreadableFallback": "ffmpeg n'a pas pu lire ce fichier",
     "openTitle": "Ouvrir {name}",
-    "renameHint": "{name}, double-clic pour renommer",
+    "renameHint": "Cliquer pour renommer {name} · F2",
     "trim": "Découper",
     "copyVideo": "Copier la vidéo dans le presse-papiers",
     "copyShareLink": "Copier le lien de partage",
@@ -1191,5 +1191,93 @@
       "other": "Associer ces {count} enregistrements à {name} ?"
     },
     "empty": "Aucun enregistrement ne correspond."
+  },
+  "library": {
+    "gallery": "Galerie de médias",
+    "select": "Sélectionner",
+    "exitSelection": "Quitter la sélection",
+    "selectVisible": "Tout sélectionner dans les résultats filtrés",
+    "deselectVisible": "Désélectionner les résultats filtrés",
+    "selectItem": "Sélectionner {name}",
+    "bulkActions": "Actions sur la sélection",
+    "selected": {
+      "one": "{count} sélectionné",
+      "other": "{count} sélectionnés"
+    },
+    "clear": "Effacer la sélection",
+    "scope": "Tout sélectionner concerne les résultats filtrés de cette galerie. La sélection reste disponible dans les autres vues.",
+    "renameLimit": "Renomme jusqu’à 1 000 éléments par lot.",
+    "processingDetails": "Détails du traitement",
+    "stopAfterBatch": "Arrêter après ce lot",
+    "apply": "Appliquer à {count} éléments",
+    "review": "Vérifie les {count} éléments sélectionnés avant de continuer.",
+    "trashConfirm": "Déplacer ces {count} éléments dans la corbeille ? Tu pourras les restaurer depuis celle-ci.",
+    "playlistHelp": "Organiser les playlists modifie uniquement leur contenu. Les fichiers restent dans leurs dossiers.",
+    "gameHelp": "Associe ces enregistrements au jeu choisi ou retire leur jeu. Les playlists automatiques suivent cette modification.",
+    "mode": "Mode de renommage",
+    "patternHelp": "Utilise {title}, {index}, {index:03d}, {date} et {game}. La date est celle de l’enregistrement original.",
+    "sourcePlaylist": "Déplacer depuis une playlist personnalisée",
+    "playlist": "Playlist",
+    "choosePlaylist": "Choisir une playlist",
+    "removeGame": "Retirer le jeu associé",
+    "previewing": "Préparation de l’aperçu du renommage…",
+    "before": "Titre actuel",
+    "after": "Nouveau titre",
+    "file": "Nom du fichier",
+    "metadataOnly": "Titre affiché uniquement ; le nom du fichier est conservé.",
+    "titleOnlySaved": "Titre enregistré. Le fichier reste nommé {name}.",
+    "manualCopy": "Copie ce texte manuellement",
+    "progress": "Progression du lot",
+    "results": "{success} réussis · {failed} échoués · {total} tentés",
+    "action": {
+      "rename": "Renommer en lot",
+      "playlist-add": "Ajouter à une playlist",
+      "playlist-remove": "Retirer d’une playlist",
+      "playlist-move": "Déplacer entre playlists",
+      "game": "Associer un jeu",
+      "trash": "Mettre à la corbeille",
+      "paths": "Copier les chemins",
+      "share-links": "Copier les liens de partage",
+      "reveal": "Afficher les fichiers"
+    },
+    "renameMode": {
+      "replace": "Remplacer du texte",
+      "prefix": "Ajouter un préfixe",
+      "suffix": "Ajouter un suffixe",
+      "number": "Numérotation séquentielle",
+      "pattern": "Modèle de nom"
+    },
+    "field": {
+      "find": "Rechercher",
+      "replace": "Remplacer par",
+      "text": "Texte",
+      "prefix": "Préfixe",
+      "suffix": "Suffixe",
+      "start": "Premier numéro",
+      "width": "Nombre de chiffres",
+      "pattern": "Modèle"
+    },
+    "errors": {
+      "title": "Saisis un titre non vide de 4 096 octets UTF-8 maximum.",
+      "missing": "Ce média n’est plus disponible.",
+      "changed": "Le média ou son titre a changé. Actualise l’aperçu et réessaie.",
+      "collision": "Ce nom de fichier est déjà utilisé. Aucun fichier n’a été écrasé.",
+      "busy": "Cette source est en cours de traitement. Attends ou annule sa tâche avant de renommer le fichier.",
+      "storage": "L’opération sur le stockage n’a pas pu aboutir.",
+      "selection": "Choisis entre 1 et 1 000 éléments valides.",
+      "confirm": "Vérifie et confirme cette opération.",
+      "pattern": "Le modèle de nom ou le numéro est invalide.",
+      "find": "Saisis le texte à remplacer.",
+      "mode": "Choisis un mode de renommage.",
+      "target": "Choisis un jeu reconnu et disponible.",
+      "playlist": "Choisis des playlists valides ; le déplacement doit partir d’une playlist personnalisée.",
+      "share": "Les liens de partage concernent uniquement les clips vidéo."
+    },
+    "jobMode": {
+      "copy": "Enregistrer une copie",
+      "replace": "Remplacer l’original",
+      "export": "Exporter",
+      "prepare": "Préparer le partage"
+    }
   }
 }

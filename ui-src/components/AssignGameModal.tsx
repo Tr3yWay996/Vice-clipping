@@ -2,7 +2,7 @@ import {useState} from 'react';
 import {useStore} from '../state/store';
 import {api} from '../lib/api';
 import {t} from '../lib/i18n';
-import {clipTitle} from '../lib/types';
+import {clipTitle,imageTitle} from '../lib/types';
 import {Modal} from './Modal';
 
 /** Explicit review; never guess a game from the pixels or all untagged files. */
@@ -16,14 +16,16 @@ export function AssignGameModal({gameId, onClose}: {gameId:string; onClose:() =>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const game = state.games.find(game => game.id === gameId);
-  const media = [...state.clips.map(clip => ({id:clip.slug, name:clipTitle(clip), game:clip.game})),
-    ...state.images.map(image => ({id:`img:${image.slug}`, name:image.name, game:image.game}))];
+  const media = [...state.clips.map(clip => ({id:clip.library_id??clip.slug,slug:clip.slug,stable:Boolean(clip.library_id), name:clipTitle(clip), game:clip.game})),
+    ...state.images.map(image => ({id:image.library_id??`img:${image.slug}`,slug:`img:${image.slug}`,stable:Boolean(image.library_id), name:imageTitle(image), game:image.game}))];
   const shown = media.filter(item => review ? selected.has(item.id) :
     (!untagged || !item.game) && (!query || item.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())));
   const submit = async () => {
     setBusy(true); setError('');
     try {
-      await api.assignGame(gameId, [...selected]);
+      const chosen=media.filter(item=>selected.has(item.id));
+      if(chosen.every(item=>item.stable))await api.assignGame(gameId,[],chosen.map(item=>item.id));
+      else await api.assignGame(gameId,chosen.map(item=>item.slug));
       await Promise.all([refreshClips(), refreshImages(), refreshGames(), refreshPlaylists()]);
       onClose();
     } catch (error) {setError((error as Error).message);}

@@ -18,7 +18,7 @@ it('requires explicit selection and a named review before assigning clips and im
  const options=container.querySelectorAll<HTMLInputElement>('.game-assign-list input');expect(options).toHaveLength(2);
  await click(options[0]);await click(options[1]);expect(api.assignGame).not.toHaveBeenCalled();
  await click(button('Review 2 selected'));expect(container.textContent).toContain('Assign these 2 recordings to Rocket League?');
- expect(container.textContent).toContain('Old clip');expect(container.textContent).toContain('Screenshot.png');expect(api.assignGame).not.toHaveBeenCalled();
+ expect(container.textContent).toContain('Old clip');expect(container.textContent).toContain('Screenshot');expect(api.assignGame).not.toHaveBeenCalled();
  await click(button('Assign 2 recordings'));expect(api.assignGame).toHaveBeenCalledExactlyOnceWith('rocket',['old','img:shot']);
  expect(store.refreshClips).toHaveBeenCalledOnce();expect(store.refreshImages).toHaveBeenCalledOnce();expect(close).toHaveBeenCalledOnce();
 });

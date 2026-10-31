@@ -391,3 +391,9 @@ And to everyone who has opened an issue with a log attached: that is most of how
 ## License
 
 [GPL-3.0](LICENSE)
+
+
+Media titles can be edited with a single click or F2 across galleries and players.
+Exact display titles, persistent media IDs, shared multi-selection, reviewed bulk
+rename/playlist/game/Trash actions and live card processing status are described in
+[Library management](docs/LIBRARY.md).

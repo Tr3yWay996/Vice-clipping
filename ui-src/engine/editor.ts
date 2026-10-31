@@ -173,7 +173,17 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   const clips = () => deps.clips();
   const uid = () => 'i' + Math.random().toString(36).slice(2, 9);
   const round = (v: number) => Math.round(v * 1000) / 1000;
-  const clipOf = (it: EdItem) => clips().find(c => c.slug === it.clipId);
+  // Keep preview ownership through the interval between a media rename event
+  // and the project snapshot carrying the migrated legacy slug reference.
+  const sourceIdentity = new Map<string,{slug:string|undefined;id:string}>();
+  const clipOf = (it: EdItem) => {
+    if(it.clipId?.startsWith('trash:'))return undefined;
+    const known=sourceIdentity.get(it.id);
+    if(known && known.slug===it.clipId)return clips().find(clip=>clip.library_id===known.id);
+    const direct=clips().find(clip=>clip.slug===it.clipId);
+    if(direct?.library_id)sourceIdentity.set(it.id,{slug:it.clipId,id:direct.library_id});
+    return direct ?? (known?clips().find(clip=>clip.library_id===known.id):undefined);
+  };
   const fmtS = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   const escHtml = (s: unknown) =>
     String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -296,9 +306,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function refreshMissing() {
     if (!project) return;
-    const have = new Set(clips().map(c => c.slug));
     missing = new Set(
-      project.items.filter(i => i.clipId && !have.has(i.clipId)).map(i => i.clipId!),
+      project.items.filter(i => i.clipId && !clipOf(i)).map(i => i.clipId!),
     );
   }
 
@@ -1018,7 +1027,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         audioPool[it.id] = a;
       }
       const revision = new URL(clip.video_url, window.location.href).search;
-      const url = `/api/clips/${encodeURIComponent(clip.slug)}/audio/${it.audioStream ?? 0}${revision}`;
+      const url = `${clip.audio_url ?? `/api/clips/${encodeURIComponent(clip.slug)}/audio`}/${it.audioStream ?? 0}${revision}`;
       if (a.getAttribute('src') !== url) a.src = url;
       if (a.playbackRate !== playbackRate) a.playbackRate = playbackRate;
       a.volume = Math.max(0, Math.min(1, it.volume ?? 1)) * monitorVolume;
@@ -1905,7 +1914,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (tab === 'library') {
       const q = query.trim().toLowerCase();
       let list = clips().filter(c => (c.duration ?? 0) > 0);
-      if (q) list = list.filter(c => `${c.name} ${c.game || ''}`.toLowerCase().includes(q));
+      if (q) list = list.filter(c => `${clipTitle(c)} ${c.game || ''}`.toLowerCase().includes(q));
       const cards = list
         .map(c => {
           const media = c.thumb_url
@@ -1999,7 +2008,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const c = clips().find(x => x.slug === id);
       ghost.innerHTML =
         c && c.thumb_url
-          ? `<img src="${escAttr(c.thumb_url)}" alt=""><span class="clip-drag-ghost-name">${escHtml(c.name || id)}</span>`
+          ? `<img src="${escAttr(c.thumb_url)}" alt=""><span class="clip-drag-ghost-name">${escHtml(clipTitle(c) || id)}</span>`
           : `<span class="clip-drag-ghost-name">${escHtml(id)}</span>`;
     } else {
       const label =

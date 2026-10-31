@@ -185,6 +185,15 @@ class GameLibraryAPI:
         body = await req.json()
         if not isinstance(body, dict):
             return web.json_response({'ok':False, 'code':'selection'}, status=400)
+        if 'media_ids' in body:
+            mids=body['media_ids']
+            if not isinstance(mids,list) or not mids or len(mids)>1000 or any(not isinstance(mid,str) for mid in mids):
+                return web.json_response({'ok':False,'code':'selection'},status=400)
+            try:
+                sources=[self._library_source(mid) for mid in mids]
+                body['slugs']=[('img:' if entry['kind']=='image' else '')+self._library_slug(path,entry['kind'],entry['id']) for entry,path,_ in sources]
+            except ValueError:
+                raise web.HTTPNotFound()
         slugs = body.get('slugs')
         if (body.get('confirm') is not True or not isinstance(slugs, list) or not slugs or len(slugs) > 1000 or
                 any(not isinstance(slug, str) for slug in slugs)):
@@ -203,11 +212,11 @@ class GameLibraryAPI:
                 name = slug[4:]
                 path = self._images.get(name)
                 if path and path.exists():
-                    await self.broadcast({'type':'image_saved', 'image':self._image_basic_json(name, path)})
+                    await self.broadcast({'type':'image_updated', 'image':self._image_basic_json(name, path)})
             else:
                 path = self._clips.get(slug)
                 if path and path.exists():
-                    await self.broadcast({'type':'clip_saved', 'clip':self._clip_json(slug, path, self._meta.get(slug, {}))})
+                    await self.broadcast({'type':'clip_updated', 'clip':self._clip_json(slug, path, self._meta.get(slug, {}))})
         return web.json_response({'ok':True})
 
     async def _api_game_artwork_file(self, req):

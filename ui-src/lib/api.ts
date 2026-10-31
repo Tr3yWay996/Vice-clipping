@@ -1,4 +1,4 @@
-import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob, DetectedGame, TrashSnapshot} from './types';
+import type {Clip, Config, Highlight, Image, Playlist, Status, ProcessingJob, DetectedGame, TrashSnapshot, RenamePlan, LibraryResult} from './types';
 import {t} from './i18n';
 import type {KeyframeInfo} from './trimming';
 
@@ -17,7 +17,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = `${res.status} ${res.statusText}`;
     try {
       const body = (await res.json()) as {error?: string; code?: string};
-      if (body.code) detail = t(body.code.startsWith('trash.') ? body.code : `games.errors.${body.code}`);
+      if (body.code) detail = t((body.code.startsWith('trash.') || body.code.startsWith('library.')) ? body.code : `games.errors.${body.code}`);
       if (body.error) detail = body.error;
     } catch {
       // Not JSON. The status line stands on its own.
@@ -39,13 +39,15 @@ const post = <T>(path: string, body?: unknown) =>
 const enc = (segment: string) => encodeURIComponent(segment);
 
 export const api = {
+  renamePreview: (ids:string[], mode:string, options:Record<string,unknown>) => post<{items:RenamePlan[];valid:boolean}>('/api/library/rename-preview',{ids,mode,options}),
+  libraryActions: (action:string, ids:string[], options:Record<string,unknown> = {}) => post<{results:LibraryResult[]}>('/api/library/actions',{action,ids,...options}),
   trash: () => request<TrashSnapshot>('/api/trash', {cache:'no-store'}),
   trashAction: (action:'restore'|'purge', ids:string[], all=false, destination?:'library') =>
     post<{ok:boolean; results:Array<{id:string;ok:boolean;code?:string}>}>('/api/trash/actions', {action,ids,all,destination,confirm:action==='purge'}),
   games: async () => (await request<{games:DetectedGame[]}>('/api/games', {cache:'no-store'})).games,
   createGame: (body:unknown) => post<{ok:boolean; id:string}>('/api/games',body),
   editGame: (id:string, body:unknown) => request<{ok:boolean}>(`/api/games/${enc(id)}`,{method:'PATCH',body:JSON.stringify(body)}),
-  assignGame: (id:string, slugs:string[]) => post<{ok:boolean}>(`/api/games/${enc(id)}/assign`,{slugs,confirm:true}),
+  assignGame: (id:string, slugs:string[], mediaIds?:string[]) => post<{ok:boolean}>(`/api/games/${enc(id)}/assign`,{slugs,confirm:true,...(mediaIds?{media_ids:mediaIds}:{})}),
   gameAction: (id:string, action:string, target?:string) => post<{ok:boolean}>(`/api/games/${enc(id)}/action`,{action,target}),
   uploadGameArtwork: (id:string, file:File) => {
     const form=new FormData();form.append('file',file);

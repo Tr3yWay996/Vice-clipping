@@ -1,8 +1,8 @@
+import {MediaGallery} from '../components/MediaGallery';
 import {useStore} from '../state/store';
 import {useImageActions} from '../state/imageActions';
 import {t} from '../lib/i18n';
 import {hotkeyLabel} from '../lib/format';
-import {ImageCard} from '../components/ImageCard';
 
 /**
  * The clips grid, with pictures in it. Same header, same grid, same card, so
@@ -40,11 +40,7 @@ export function Images() {
               : t('images.emptyNoKey')}
         </p>
       ) : (
-        <div className="clip-grid">
-          {visibleImages.map(image => (
-            <ImageCard key={image.slug} image={image} draggable actions={actions} />
-          ))}
-        </div>
+        <MediaGallery images={visibleImages} imageActions={actions}/>
       )}
 
       {overlays}

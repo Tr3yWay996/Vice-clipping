@@ -137,7 +137,7 @@ export function TrimModal({
       video.removeAttribute('src');
       video.load();
     };
-  }, [clip]);
+  }, [clip?.library_id ?? clip?.slug, clip?.content_revision ?? clip?.video_url]);
 
 
   useEffect(() => {
@@ -158,7 +158,7 @@ export function TrimModal({
         if (!controller.signal.aborted) setAnalyzing(false);
       });
     return () => controller.abort();
-  }, [clip]);
+  }, [clip?.library_id ?? clip?.slug, clip?.content_revision ?? clip?.video_url]);
 
   useEffect(() => {
     const timeline = timelineRef.current;
@@ -168,7 +168,7 @@ export function TrimModal({
     const observer = new ResizeObserver(measure);
     observer.observe(timeline);
     return () => observer.disconnect();
-  }, [clip]);
+  }, [clip?.library_id ?? clip?.slug, clip?.content_revision ?? clip?.video_url]);
 
   // Media timeupdate is deliberately infrequent. Paint a smooth playhead while
   // playing and keep paused/seeked updates on the media events below.

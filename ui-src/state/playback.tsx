@@ -46,9 +46,18 @@ export function PlaybackProvider({children}: {children: ReactNode}) {
   const [renamingClip, setRenamingClip] = useState<Clip | null>(null);
   const [renameTransition, setRenameTransition] = useState<{from:string;to:string}|null>(null);
 
-  const viewerClip = clips.find(c => c.slug === viewerSlug) ?? (renamingClip?.slug === viewerSlug ? renamingClip : null);
-  const trimClip = clips.find(c => c.slug === trimSlug) ?? null;
-  const shareClip = clips.find(c => c.slug === shareSlug) ?? null;
+  const lastViewer=useRef<Clip|null>(null),lastTrim=useRef<Clip|null>(null),lastShare=useRef<Clip|null>(null);
+  const sameMedia=(previous:Clip|null)=>previous?.library_id?clips.find(c=>c.library_id===previous.library_id):null;
+  const viewerClip = clips.find(c => c.slug === viewerSlug) ?? (viewerSlug?sameMedia(lastViewer.current):null) ?? (renamingClip?.slug === viewerSlug ? renamingClip : null);
+  const trimClip = clips.find(c => c.slug === trimSlug) ?? (trimSlug?sameMedia(lastTrim.current):null) ?? null;
+  const shareClip = clips.find(c => c.slug === shareSlug) ?? (shareSlug?sameMedia(lastShare.current):null) ?? null;
+
+  lastViewer.current=viewerClip;lastTrim.current=trimClip;lastShare.current=shareClip;
+  useEffect(()=>{
+    if(viewerClip && viewerSlug!==viewerClip.slug)setViewerSlug(viewerClip.slug);
+    if(trimClip && trimSlug!==trimClip.slug)setTrimSlug(trimClip.slug);
+    if(shareClip && shareSlug!==shareClip.slug)setShareSlug(shareClip.slug);
+  },[viewerClip,trimClip,shareClip,viewerSlug,trimSlug,shareSlug]);
 
   const openViewer = useCallback((slug: string) => {
     // Card previews keep decoding behind the scrim otherwise, and they are
@@ -87,9 +96,9 @@ export function PlaybackProvider({children}: {children: ReactNode}) {
   // A clip deleted underneath the viewer, from anywhere, closes it.
   useEffect(() => {
     const gone = (slug: string) => slug !== renamingFrom.current && !clips.some(c => c.slug === slug);
-    if (viewerSlug && gone(viewerSlug)) setViewerSlug(null);
-    if (trimSlug && gone(trimSlug)) setTrimSlug(null);
-    if (shareSlug && gone(shareSlug)) setShareSlug(null);
+    if (viewerSlug && !viewerClip && gone(viewerSlug)) setViewerSlug(null);
+    if (trimSlug && !trimClip && gone(trimSlug)) setTrimSlug(null);
+    if (shareSlug && !shareClip && gone(shareSlug)) setShareSlug(null);
   }, [clips, viewerSlug, trimSlug, shareSlug]);
 
   const renameClip = useRenameClip();

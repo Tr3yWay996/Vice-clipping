@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import logging
 import math
 from fractions import Fraction
@@ -16,6 +17,11 @@ from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger("vice.media")
+
+
+def bounded_component(value: str, limit=128) -> str:
+    """Bound internal filenames only; never alter media filenames or titles."""
+    return value if len(value.encode('utf-8'))<=limit else '~'+hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 def media_revision(path: Path) -> str:

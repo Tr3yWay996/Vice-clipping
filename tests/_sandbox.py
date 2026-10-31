@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from vice import editor, games, jobs, keys, playlists, trash, updates
+from vice import editor, games, jobs, keys, playlists, trash, updates, library
 
 try:
     from vice import share
@@ -24,6 +24,7 @@ ROOT = Path(tempfile.mkdtemp(prefix="vice-tests-"))
 atexit.register(shutil.rmtree, ROOT, ignore_errors=True)
 
 REDIRECTS = {
+    (library, "LIBRARY_PATH"): ROOT / "library.json",
     (trash, "TRASH_PATH"): ROOT / "trash.json",
     (games, "GAMES_PATH"): ROOT / "games.json",
     (jobs, "JOBS_PATH"): ROOT / "jobs.json",

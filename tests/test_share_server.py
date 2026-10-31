@@ -187,10 +187,11 @@ class ShareServerSecurityTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.get(f"{local_base}/api/clips") as resp:
             payload = await resp.json()
 
-        self.assertEqual(
-            payload["clips"][0]["video_url"],
-            f"/v/test_clip?v={_share.media_revision(self.clip_path)}",
-        )
+        clip=payload['clips'][0]
+        self.assertEqual(clip['video_url'],f"/api/library/{clip['library_id']}/video?v={clip['content_revision']}")
+        async with self.client.get(local_base+clip['video_url']) as response:
+            self.assertEqual(response.status,200)
+            self.assertEqual(response.headers.get('Cache-Control'),'no-cache')
 
         public_base = f"http://127.0.0.1:{self.public_port}"
         token = _share_token(self.server, "test_clip")
@@ -542,29 +543,30 @@ class PlaylistApiTests(unittest.IsolatedAsyncioTestCase):
             clips = (await resp.json())["clips"]
         return {c["slug"]: c for c in clips}[slug]
 
-    async def test_rename_normalises_spaces_and_apostrophes(self) -> None:
+    async def test_rename_preserves_spaces_and_apostrophes(self) -> None:
         """#138: these used to be rejected outright, or land on disk and break
         every link and button on the card."""
         async with self.client.post(f"{self.base}/api/clips/Vice_Clip_2/rename",
                                     json={"name": "Insane wallbang"}) as resp:
             payload = await resp.json()
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["slug"], "Insane-wallbang")
-        self.assertEqual(payload["name"], "Insane-wallbang.mp4")
-        self.assertTrue((self.output_dir / "Insane-wallbang.mp4").exists())
+        self.assertEqual(payload["slug"], "Insane wallbang")
+        self.assertEqual(payload["name"], "Insane wallbang.mp4")
+        self.assertTrue((self.output_dir / "Insane wallbang.mp4").exists())
 
-        async with self.client.post(f"{self.base}/api/clips/Insane-wallbang/rename",
+        async with self.client.post(f"{self.base}/api/clips/Insane wallbang/rename",
                                     json={"name": "Bob's clip"}) as resp:
             payload = await resp.json()
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["slug"], "Bobs-clip")
+        self.assertEqual(payload["slug"], "Bob's clip")
 
-    async def test_rename_rejects_a_name_with_nothing_usable_left(self) -> None:
+    async def test_rename_preserves_punctuation_only_titles(self) -> None:
         async with self.client.post(f"{self.base}/api/clips/Vice_Clip_2/rename",
                                     json={"name": "???"}) as resp:
             payload = await resp.json()
-        self.assertFalse(payload["ok"])
-        self.assertTrue((self.output_dir / "Vice_Clip_2.mp4").exists())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["display_title"],"???")
+        self.assertTrue((self.output_dir / "???.mp4").exists())
 
     async def test_clip_urls_are_percent_encoded(self) -> None:
         """A slug is a filename, so a clip renamed outside Vice can still hold
@@ -583,7 +585,9 @@ class PlaylistApiTests(unittest.IsolatedAsyncioTestCase):
         # The share link names the clip by token, so the filename is not in it
         # at all; the app's own media URLs still carry the encoded slug.
         self.assertNotIn("Bob", clip["share_url"])
-        self.assertIn("Bob%27s%20clip", clip["video_url"])
+        self.assertIn(clip["library_id"],clip["video_url"])
+        async with self.client.get(f"{self.base}/v/Bob%27s%20clip") as response:
+            self.assertEqual(response.status,200)
 
         # The embed page the share link points at has to render, and its
         # og:video must stay a single unbroken URL.
@@ -1839,7 +1843,7 @@ class ShareServerClipBroadcastTests(unittest.IsolatedAsyncioTestCase):
 
                         await asyncio.sleep(0.06)
 
-            self.assertEqual(messages[-1]["type"], "clip_saved")
+            self.assertEqual(messages[-1]["type"], "clip_updated")
             self.assertEqual(messages[-1]["clip"]["duration"], 6.5)
 
 
@@ -2595,13 +2599,13 @@ class ImageApiTests(unittest.IsolatedAsyncioTestCase):
             f"{self.base}/api/images/Vice_Shot_1/rename", json={"name": "Nice shot"}
         ) as resp:
             renamed = await resp.json()
-        self.assertEqual(renamed["slug"], "Nice-shot")
-        self.assertTrue((self.image_dir / "Nice-shot.png").exists())
+        self.assertEqual(renamed["slug"], "Nice shot")
+        self.assertTrue((self.image_dir / "Nice shot.png").exists())
         self.assertFalse(shot.exists())
 
-        async with self.client.delete(f"{self.base}/api/images/Nice-shot") as resp:
+        async with self.client.delete(f"{self.base}/api/images/Nice shot") as resp:
             self.assertEqual(resp.status, 200)
-        self.assertFalse((self.image_dir / "Nice-shot.png").exists())
+        self.assertFalse((self.image_dir / "Nice shot.png").exists())
         self.assertEqual(self.server.image_count(), 0)
 
     @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg not installed")
@@ -2863,7 +2867,7 @@ class ShareTokenTests(unittest.IsolatedAsyncioTestCase):
         ) as resp:
             self.assertTrue((await resp.json()).get("ok"))
         self.assertEqual(await self._status(f"{self.public}/v/{token}"), 200)
-        self.assertEqual(self.server._share_slugs[token], "clutch-round")
+        self.assertEqual(self.server._share_slugs[token], "clutch round")
 
     async def test_a_deleted_clip_takes_its_link_with_it(self) -> None:
         token = _share_token(self.server, "Vice_Clip_2")
@@ -2911,9 +2915,12 @@ class ShareTokenTests(unittest.IsolatedAsyncioTestCase):
             return {"width": 0, "height": 0, "duration": 0.0, "unreadable": True}
 
         sent: list[dict] = []
+        renamed_ready = asyncio.Event()
 
         async def _record(message: dict) -> None:
             sent.append(message)
+            if message.get('type')=='clip_updated' and message['clip']['slug']=='Renamed':
+                renamed_ready.set()
 
         old = self.server._clips["Vice_Clip_1"]
         self.server._meta.pop("Vice_Clip_1", None)
@@ -2921,11 +2928,12 @@ class ShareTokenTests(unittest.IsolatedAsyncioTestCase):
              mock.patch.object(self.server, "broadcast", new=_record):
             late = asyncio.create_task(self.server._broadcast_clip("Vice_Clip_1", old))
             await probing.wait()
-            await self._rename("Vice_Clip_1", "Renamed")
+            await asyncio.wait_for(self._rename("Vice_Clip_1", "Renamed"),timeout=2)
             gate.set()
             await late
+            await asyncio.wait_for(renamed_ready.wait(),timeout=5)
 
-        announced = [m["clip"]["slug"] for m in sent if m.get("type") == "clip_saved"]
+        announced = [m["clip"]["slug"] for m in sent if m.get("type") in {'clip_saved','clip_updated','clip_renamed'}]
         self.assertNotIn("Vice_Clip_1", announced)
         self.assertNotIn("Vice_Clip_1", self.server._meta)
 

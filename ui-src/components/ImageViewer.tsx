@@ -246,7 +246,7 @@ export function ImageViewer(props: ImageViewerProps) {
   useEffect(() => {
     setStrokes([]);
     drawing.current = null;
-  }, [image?.slug]);
+  }, [image?.library_id ?? image?.slug, image?.content_revision ?? image?.image_url]);
 
   const step = useCallback(
     (delta: number) => {
@@ -273,7 +273,7 @@ export function ImageViewer(props: ImageViewerProps) {
     }
   }, [image?.width, image?.height, sizeFrame]);
 
-  useLayoutEffect(sizeCanvas, [sizeCanvas, image?.slug]);
+  useLayoutEffect(sizeCanvas, [sizeCanvas, image?.library_id ?? image?.slug, image?.content_revision ?? image?.image_url]);
 
   // Redraw everything, every time. At a handful of strokes this is cheaper
   // than tracking what changed, and it is what makes undo exact.
@@ -297,6 +297,8 @@ export function ImageViewer(props: ImageViewerProps) {
     if (!open || closing || props.shortcutsBlocked) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      const dialogs=[...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].filter(dialog=>!dialog.closest('[data-closing="true"]'));
+      if(dialogs[dialogs.length-1]!==dialogRef.current)return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (e.key === 'Tab') {
         const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, [tabindex="0"]');
@@ -313,7 +315,8 @@ export function ImageViewer(props: ImageViewerProps) {
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-      if (e.key === 'ArrowLeft') {
+      if(e.key==='F2'){e.preventDefault();setRenamingTitle(true);}
+      else if (e.key === 'ArrowLeft') {
         e.preventDefault();
         step(-1);
       } else if (e.key === 'ArrowRight') {
@@ -438,7 +441,8 @@ export function ImageViewer(props: ImageViewerProps) {
                   }}
                 />
               ) : (
-                <h2 title={t('viewer.doubleClickRename')} onDoubleClick={() => setRenamingTitle(true)}>
+                <h2 role="button" tabIndex={0} title={t('viewer.clickRename')} onClick={()=>setRenamingTitle(true)}
+                  onKeyDown={event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();setRenamingTitle(true);}}}>
                   {imageTitle(image)}
                 </h2>
               )}

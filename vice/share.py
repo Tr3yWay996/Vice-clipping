@@ -50,15 +50,14 @@ from .editor import (DISCORD_MAX_BYTES, DiscordTooLarge, EditorProjectStore,
                      default_export_name, discord_bitrates, project_extent,
                      sanitize_export_name, text_file_contents,
                      validate_project)
-from .media import communicate_with_timeout, media_revision, probe_media, probe_media_detailed
+from .media import bounded_component, communicate_with_timeout, media_revision, probe_media, probe_media_detailed
 from .keyframes import KeyframeCache
 from .jobs import ProcessingQueue
 from .playlists import (IMAGE_PREFIX, PlaylistStore, build_tag_index,
                         image_slug)
 from .recorder import (IMAGE_EXTS, KEEP_ALL_STREAMS, _available_encoders,
                        _is_nvidia, filename_tag, list_display_options,
-                       list_gsr_audio_sources, next_image_path,
-                       slugify_clip_name)
+                       list_gsr_audio_sources, next_image_path)
 from .runtime import actual_home_dir, load_user_systemd_env, resolve_path
 
 log = logging.getLogger("vice.share")
@@ -181,8 +180,12 @@ EXPORT_WORK_DIR = actual_home_dir() / ".cache" / "vice" / "exports"
 HIGHLIGHTS_DIR = actual_home_dir() / ".local" / "share" / "vice" / "highlights"
 
 
+def _highlight_path(slug: str) -> Path:
+    return HIGHLIGHTS_DIR / f"{bounded_component(slug,250)}.json"
+
+
 def _load_highlights(slug: str) -> list:
-    f = HIGHLIGHTS_DIR / f"{slug}.json"
+    f = _highlight_path(slug)
     if not f.exists():
         return []
     try:
@@ -194,7 +197,7 @@ def _load_highlights(slug: str) -> list:
 
 def _save_highlights(slug: str, highlights: list) -> None:
     HIGHLIGHTS_DIR.mkdir(parents=True, exist_ok=True)
-    (HIGHLIGHTS_DIR / f"{slug}.json").write_text(json.dumps(highlights))
+    _highlight_path(slug).write_text(json.dumps(highlights))
 
 
 # In-app view counts per slug. Like playlist membership, the counters are
@@ -279,16 +282,18 @@ def _save_app_state(state: dict) -> None:
 def _thumb_path(path: Path) -> Path:
     """Return cache path unique to this clip file content/version."""
     try:
-        key = f"{path.stem}_{media_revision(path)}"
+        key = f"{bounded_component(path.stem)}_{media_revision(path)}"
     except OSError:
-        key = path.stem
+        key = bounded_component(path.stem)
+    legacy=THUMB_DIR/f"{path.stem}_{media_revision(path)}.jpg" if path.exists() else None
+    if legacy and len(legacy.name.encode('utf-8'))<=255 and legacy.exists():return legacy
     return THUMB_DIR / f"{key}.jpg"
 
 
 def _purge_slug_thumbs(slug: str, keep: frozenset[Path] = frozenset()) -> None:
     """Remove any cached thumbs for a slug (legacy + versioned variants)."""
     THUMB_DIR.mkdir(parents=True, exist_ok=True)
-    for t in THUMB_DIR.glob(f"{glob.escape(slug)}*.jpg"):
+    for t in set(THUMB_DIR.glob(f"{glob.escape(slug)}*.jpg")) | set(THUMB_DIR.glob(f"{glob.escape(bounded_component(slug))}*.jpg")):
         if t not in keep:
             t.unlink(missing_ok=True)
 
@@ -297,17 +302,19 @@ def _proxy_path(path: Path) -> Path:
     """Cache path for a clip's H.264 preview, keyed by file identity so a trim
     or a reused clip number naturally invalidates it (same idea as _thumb_path)."""
     try:
-        key = f"{path.stem}_{media_revision(path)}"
+        key = f"{bounded_component(path.stem)}_{media_revision(path)}"
     except OSError:
-        key = path.stem
+        key = bounded_component(path.stem)
     # Invalidate previews made before the eight-bit playback fix (#172).
+    legacy=PROXY_DIR/f"{path.stem}_{media_revision(path)}_v2.mp4" if path.exists() else None
+    if legacy and len(legacy.name.encode('utf-8'))<=255 and legacy.exists():return legacy
     return PROXY_DIR / f"{key}_v2.mp4"
 
 
 def _purge_slug_proxies(slug: str, keep: frozenset[Path] = frozenset()) -> None:
     """Remove any cached preview proxies for a slug (all file versions)."""
     PROXY_DIR.mkdir(parents=True, exist_ok=True)
-    for pattern in (f"{glob.escape(slug)}*.mp4", f"{glob.escape(slug)}*_audio_*.m4a"):
+    for pattern in {f"{glob.escape(prefix)}{suffix}" for prefix in [slug,bounded_component(slug)] for suffix in ["*.mp4","*_audio_*.m4a"]}:
         for p in PROXY_DIR.glob(pattern):
             if p not in keep:
                 p.unlink(missing_ok=True)
@@ -316,13 +323,17 @@ def _purge_slug_proxies(slug: str, keep: frozenset[Path] = frozenset()) -> None:
 def _current_cache_files(path: Path) -> list[Path]:
     """The thumbnail and previews already made for this exact file version."""
     proxy = _proxy_path(path)
-    found = [_thumb_path(path), proxy, *PROXY_DIR.glob(f"{glob.escape(proxy.stem)}_audio_*.m4a")]
+    canonical=f"{bounded_component(path.stem)}_{media_revision(path)}_v2"
+    audio=set(PROXY_DIR.glob(f"{glob.escape(proxy.stem)}_audio_*.m4a"))|set(PROXY_DIR.glob(f"{glob.escape(canonical)}_audio_*.m4a"))
+    found = [_thumb_path(path), proxy, *audio]
     return [p for p in found if p.exists()]
 
 
 def _audio_preview_path(path: Path, index: int) -> Path:
     proxy = _proxy_path(path)
-    return proxy.with_name(f"{proxy.stem}_audio_{index}.m4a")
+    legacy=proxy.with_name(f"{proxy.stem}_audio_{index}.m4a")
+    if len(legacy.name.encode('utf-8'))<=255 and legacy.exists():return legacy
+    return PROXY_DIR/f"{bounded_component(path.stem)}_{media_revision(path)}_v2_audio_{index}.m4a"
 
 
 async def _make_audio_preview(path: Path, index: int) -> Path:
@@ -373,9 +384,11 @@ def _discord_path(path: Path) -> Path:
     """Where a clip's Discord-sized copy goes, keyed by file identity for the
     same reason as _proxy_path."""
     try:
-        key = f"{path.stem}_{media_revision(path)}"
+        key = f"{bounded_component(path.stem)}_{media_revision(path)}"
     except OSError:
-        key = path.stem
+        key = bounded_component(path.stem)
+    legacy=path.parent/DISCORD_SUBDIR/f"{path.stem}_{media_revision(path)}.mp4" if path.exists() else None
+    if legacy and len(legacy.name.encode('utf-8'))<=255 and legacy.exists():return legacy
     return path.parent / DISCORD_SUBDIR / f"{key}.mp4"
 
 
@@ -386,7 +399,7 @@ def _purge_clip_discord(path: Optional[Path]) -> None:
     folder = path.parent / DISCORD_SUBDIR
     if not folder.is_dir():
         return
-    for p in folder.glob(f"{glob.escape(path.stem)}*.mp4"):
+    for p in set(folder.glob(f"{glob.escape(path.stem)}*.mp4")) | set(folder.glob(f"{glob.escape(bounded_component(path.stem))}*.mp4")):
         p.unlink(missing_ok=True)
 
 
@@ -1045,10 +1058,11 @@ def _quick_tunnel_url(line: str) -> Optional[str]:
 
 from .games import display_name
 from .game_api import GameLibraryAPI
+from .library_api import LibraryAPI
 from .trash_api import TrashAPI
 
 
-class ShareServer(GameLibraryAPI, TrashAPI):
+class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
     def __init__(self, cfg, games=None) -> None:
         from .games import GameLibrary
         self.cfg = cfg
@@ -1080,6 +1094,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         # clip's, and they can collide with one, so nothing may look an image
         # up in _clips or the other way round.
         self._images: dict[str, Path] = {}
+        self._image_dimensions = {}
 
         self.playlists = PlaylistStore()
         self._views = _load_views()
@@ -1087,6 +1102,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         self._share_slugs = {token: slug for slug, token in self._share_tokens.items()}
         self.editor_project = EditorProjectStore()
         self._init_trash()
+        self._init_library()
 
         # One encoder across the library, shared by preview proxies and
         # Discord copies. Different clips used to spawn independent encoders,
@@ -1145,6 +1161,10 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         r.add_get("/it/{slug}",   self._image_thumb)
 
         # REST
+        r.add_get("/api/library/{mid}/audio/{index}", self._api_library_audio)
+        r.add_get("/api/library/{mid}/{asset}", self._api_library_file)
+        r.add_post("/api/library/rename-preview", self._api_library_preview)
+        r.add_post("/api/library/actions", self._api_library_actions)
         r.add_get("/api/clips",              self._api_clips)
         r.add_get("/api/clips/{slug}",       self._api_clip_info)
         r.add_get("/api/clips/{slug}/keyframes", self._api_keyframes)
@@ -1227,10 +1247,14 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         if out_dir.exists():
             media = list(out_dir.glob("*.mp4")) + list(out_dir.glob("*.mkv"))
             for clip in sorted(media, key=lambda p: p.stat().st_mtime):
-                self._clips[clip.stem] = clip
+                self._clips[self._library_slug(clip)] = clip
         self.rescan_images()
         self._index_restored_media()
         self._ensure_share_tokens()
+        with self.library.batch():
+            for kind,index in [("clip",self._clips),("image",self._images)]:
+                for path in index.values(): self.library.ensure(path,kind)
+        self._sync_job_sources()
         # Both indexes in one call. backfill drops membership for anything not
         # in the set it is given, so handing it the clips alone would empty
         # every playlist of its screenshots on the next start.
@@ -1334,7 +1358,8 @@ class ShareServer(GameLibraryAPI, TrashAPI):
 
     def add_clip(self, path: Path, game: Optional[str] = None, game_id: Optional[str] = None) -> str:
         """Register a new clip and return its share URL."""
-        slug = path.stem
+        entry=self.library.ensure(path,"clip",fresh=True)
+        slug = self._library_slug(path,mid=entry["id"])
         self._clips[slug] = path
         self._meta.pop(slug, None)
         # A fresh recording under a reused clip number must not inherit the
@@ -1504,7 +1529,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         if self._clips.get(slug) != path or not path.exists():
             self._meta.pop(slug, None)
             return
-        await self.broadcast({"type": "clip_saved", "clip": self._clip_json(slug, path, meta)})
+        await self.broadcast({"type": "clip_updated", "clip": self._clip_json(slug, path, meta)})
 
     async def _get_meta(self, slug: str, path: Path) -> dict:
         revision = media_revision(path)
@@ -1532,7 +1557,10 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         enc = quote(slug, safe="")
         thumb_rev = media_revision(path) if path.exists() else f"{size}-{mtime_ns}"
         thumb_url = f"/t/{enc}?v={thumb_rev}" if _thumb_path(path).exists() else None
+        fields = self._library_fields(path, "clip")
+        base = f"/api/library/{fields['library_id']}"
         return {
+            **fields,
             "slug":       slug,
             "name":       path.name,
             "media_id":   media_revision(path) if path.exists() else None,
@@ -1563,8 +1591,9 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             # get reused (Vice_Clip_5 can name a brand-new file), and a trim
             # rewrites the file under the same slug, without the version the
             # browser may play a cached older video for the clip it shows.
-            "video_url":  f"/v/{enc}?v={thumb_rev}",
-            "thumb_url":  thumb_url,
+            "video_url":  f"{base}/video?v={fields['content_revision']}",
+            "audio_url":  f"{base}/audio",
+            "thumb_url":  f"{base}/thumbnail?v={fields['content_revision']}" if thumb_url else None,
         }
 
     # ── images ────────────────────────────────────────────────────────────────
@@ -1584,6 +1613,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
     def add_image(self, path: Path, game: Optional[str] = None, game_id: Optional[str] = None) -> str:
         """Register a new screenshot and return its slug."""
         slug = path.stem
+        self.library.ensure(path,"image",fresh=True)
         self._images[slug] = path
         identity = self.games.get(game_id) if game_id else (self.games.ensure_name(game) if game else None)
         if identity:
@@ -1632,12 +1662,15 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         log.info("Screenshot thumbnail/metadata ready: file=%s thumbnail_ms=%.1f metadata_ms=%.1f",
                  path.name, (thumb_ready - started) * 1000, (time.monotonic() - thumb_ready) * 1000)
         if self._images.get(slug) == path and path.exists():
-            await self.broadcast({"type":"image_saved","image":image})
+            await self.broadcast({"type":"image_updated","image":image})
 
     async def _image_json(self, slug: str, path: Path) -> dict:
         # probe_media, never _ffprobe: _ffprobe reads a duration of zero as a
         # damaged container and goes off to attempt a moov remux, which means
         # nothing for a still and would rewrite the user's screenshot.
+        entry=self.library.ensure(path,'image')
+        cached=self._image_dimensions.get(entry['id'])
+        if cached and cached[0]==entry['revision']:return self._image_basic_json(slug,path)
         width = height = 0
         try:
             probed = await probe_media(path) or {}
@@ -1646,6 +1679,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         except Exception as exc:
             log.debug("Could not read the dimensions of %s: %s", path.name, exc)
 
+        self._image_dimensions[entry['id']]=(entry['revision'],width,height)
         return dict(self._image_basic_json(slug, path), width=width, height=height)
 
     def _image_basic_json(self, slug: str, path: Path) -> dict:
@@ -1657,7 +1691,12 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             size, mtime_ns, created_at = 0, 0, ''
         enc = quote(slug, safe="")
         rev = f"{size}-{mtime_ns}"
+        fields = self._library_fields(path,"image")
+        cached=self._image_dimensions.get(fields['library_id'])
+        dimensions=cached[1:] if cached and cached[0]==fields['content_revision'] else (0,0)
+        base = f"/api/library/{fields['library_id']}"
         return {
+            **fields,
             "slug":       slug,
             "name":       path.name,
             "media_id":   media_revision(path) if path.exists() else None,
@@ -1665,12 +1704,12 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             "created_at": created_at,
             "game":       self._game_for(image_slug(slug)),
             "game_id":    self._game_id(image_slug(slug)),
-            "width":      0,
-            "height":     0,
+            "width":      dimensions[0],
+            "height":     dimensions[1],
             # Annotating rewrites the file under the same slug, so both URLs
             # carry the file's identity or the window shows the pre-edit copy.
-            "image_url":  f"/i/{enc}?v={rev}",
-            "thumb_url":  f"/it/{enc}?v={rev}" if _thumb_path(path).exists() else None,
+            "image_url":  f"{base}/image?v={fields['content_revision']}",
+            "thumb_url":  f"{base}/image-thumbnail?v={fields['content_revision']}" if _thumb_path(path).exists() else None,
         }
 
     # ── route handlers ────────────────────────────────────────────────────────
@@ -1748,7 +1787,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         # token never hands out the filename that would lead to other clips.
         enc = quote(ref, safe="")
         page = _EMBED_PAGE.format(
-            title=html.escape(f"Vice clip, {slug}", quote=True),
+            title=html.escape(self._library_fields(path,"clip")["display_title"], quote=True),
             page_url=f"{base}/c/{enc}",
             video_url=f"{base}/v/{enc}{suffix}",
             video_type="video/x-matroska" if suffix == ".mkv" else "video/mp4",
@@ -1965,7 +2004,8 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         if existing:
             return existing
         job = await self._jobs.submit('prepare', path.name, {'slug': slug},
-                                      source_revision=media_revision(path), duration=meta.get('duration', 0))
+                                      source_revision=media_revision(path), duration=meta.get('duration', 0),
+                                      source_media_ids=[self.library.ensure(path,'clip')['id']], mode='prepare')
         return job
 
     async def _run_job(self, job):
@@ -1986,7 +2026,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
                 raise ValueError(result.get('error', 'Trim failed'))
             target = self._clips.get(result['slug']) or Path(payload['target'])
             if payload.get('name'):
-                rename = SimpleNamespace(match_info={'slug': result['slug']})
+                rename = SimpleNamespace(match_info={'slug': result['slug']},queue_job=job)
                 async def name(): return {'name': payload['name']}
                 rename.json = name
                 renamed = json.loads((await self._api_rename(rename)).text)
@@ -2088,6 +2128,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             raise web.HTTPNotFound()
 
         source_stat = path.stat()
+        library_entry = self.library.ensure(path,"clip")
         start = float(body.get("start", 0))
         end   = float(body.get("end",   0))
         # A copy keeps the original. Replacing it lost the rest of a session
@@ -2102,15 +2143,14 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             target = _trimmed_copy_path(path) if as_copy else path
             output = target
             if body.get('name'):
-                stem = slugify_clip_name(str(body['name']))
-                if not stem:
-                    return web.json_response({'ok': False, 'error': 'That name will not work as a file'})
-                output = path.parent / f'{stem}{path.suffix}'
+                from .library import physical_target
+                output = physical_target(target,body['name'])
                 if output.exists() and (as_copy or output != path):
                     return web.json_response({'ok': False, 'error': 'A clip with that name already exists'})
             payload = {**body, 'background': False, 'slug': slug, 'target': str(target)}
             queued = await self._jobs.submit('trim', path.name, payload, output_path=output,
-                                            source_revision=media_revision(path), duration=end - start)
+                                            source_revision=media_revision(path), duration=end - start,
+                                            source_media_ids=[library_entry['id']],mode='copy' if as_copy else 'replace')
             return web.json_response({'ok': True, 'job_id': queued['id'], 'slug': target.stem, 'copy': as_copy})
 
         ext = path.suffix.lstrip(".") or "mp4"
@@ -2228,17 +2268,18 @@ class ShareServer(GameLibraryAPI, TrashAPI):
                 if target.exists():
                     return web.json_response({'ok': False, 'error': 'Output already exists'})
                 tmp.replace(target)
-                if kept_keys is not None:
-                    keystore.save_sidecar(target.stem, keystore.cut_intervals(kept_keys, start, end))
                 self.add_clip(target, self._game_for(slug), **({'game_id':self._game_id(slug)} if self._game_id(slug) else {}))
-                return web.json_response({"ok": True, "slug": target.stem, "copy": True})
+                if kept_keys is not None:
+                    keystore.save_sidecar(self._library_slug(target), keystore.cut_intervals(kept_keys, start, end))
+                return web.json_response({"ok": True, "slug": self._library_slug(target), "copy": True})
 
             tmp.replace(path)
+            self.library.adopt(library_entry["id"],path,content_changed=True)
             if kept_keys is not None:
                 keystore.save_sidecar(slug, keystore.cut_intervals(kept_keys, start, end))
             # Clear cached thumbnail and metadata so they regenerate on next access
-            _purge_slug_thumbs(slug)
-            _purge_slug_proxies(slug)
+            _purge_slug_thumbs(path.stem)
+            _purge_slug_proxies(path.stem)
             _purge_clip_discord(path)
             self._meta.pop(slug, None)
             self._meta_revisions.pop(slug, None)
@@ -2249,80 +2290,13 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             tmp.unlink(missing_ok=True)
 
     async def _api_rename(self, req: web.Request) -> web.Response:
-        slug = req.match_info["slug"]
-        path = self._clips.get(slug)
-        if not path or not path.exists():
-            raise web.HTTPNotFound()
-
-        body     = await req.json()
-        requested = str(body.get("name") or "").strip()
-        if not requested:
-            return web.json_response({"ok": False, "error": "name is required"})
-
-        if self._trash_lock.locked():
-            return web.json_response({'code':'trash.errors.busy'}, status=409)
-        # Spaces and punctuation are normalised away rather than rejected, so
-        # "Insane wallbang" saves as Insane-wallbang.mp4. Keep the clip's own
-        # container.
-        ext = path.suffix.lower() or ".mp4"
-        stem = slugify_clip_name(requested)
-        if not stem:
-            return web.json_response({"ok": False, "error": "that name will not work as a file"})
-
-        new_path = path.parent / f"{stem}{ext}"
-        if new_path.exists() and new_path != path:
-            return web.json_response({"ok": False, "error": "A clip with that name already exists"})
-
-        # A rename keeps the file's size and modification time, so the cached
-        # thumbnail and previews are still valid. Purging them made an H.265
-        # clip transcode its preview again after every rename (#226).
-        cached = frozenset(_current_cache_files(path))
-        old_stem = path.stem
-        old_revision = media_revision(path)
-        path.rename(new_path)
-        new_revision = media_revision(new_path)
-        self._keyframes.invalidate(path)
-        new_slug = new_path.stem
-        self._rename_restored_path(path, new_path)
-        if hasattr(self, 'games'):
-            self.games.rename_clip(slug, new_slug)
-
-        # Update internal state
-        self._clips.pop(slug, None)
-        self._clips[new_slug] = new_path
-        _purge_slug_thumbs(slug, keep=cached)
-        _purge_slug_proxies(slug, keep=cached)
-        _purge_clip_discord(path)
-        for old in cached:
-            try:
-                old.replace(old.with_name(new_slug + old.name[len(old_stem):].replace(old_revision, new_revision)))
-            except OSError as exc:
-                log.debug("Could not carry %s across the rename: %s", old.name, exc)
-        self._meta.pop(slug, None)
-        self._meta_revisions.pop(slug, None)
-
-        # Rename highlights file if it exists
-        old_hl = HIGHLIGHTS_DIR / f"{slug}.json"
-        if old_hl.exists():
-            HIGHLIGHTS_DIR.mkdir(parents=True, exist_ok=True)
-            old_hl.rename(HIGHLIGHTS_DIR / f"{new_slug}.json")
-        keystore.move_sidecar(slug, new_slug)
-
-        # Playlist membership, the view counter and the editor project follow
-        # the clip
-        if self.playlists.on_clip_renamed(slug, new_slug):
-            await self._broadcast_playlists()
-        if self.editor_project.on_clip_renamed(slug, new_slug):
-            await self.broadcast({"type": "editor_project_changed"})
-        if slug in self._views:
-            self._views[new_slug] = self._views.pop(slug)
-            _save_views(self._views)
-        self._move_share_token(slug, new_slug)
-
-        # Tell the UI: old card gone, new card appears
-        await self.broadcast({"type": "clip_deleted", "slug": slug})
-        asyncio.create_task(self._broadcast_clip(new_slug, new_path))
-        return web.json_response({"ok": True, "slug": new_slug, "name": new_path.name})
+        try:
+            result = await self._rename_media('clip',req.match_info['slug'],(await req.json()).get('name'),owner=getattr(req,'queue_job',None))
+            return web.json_response(result)
+        except ValueError as exc:
+            return web.json_response({'ok':False,'code':f'library.errors.{exc}'},status=409)
+        except OSError:
+            return web.json_response({'ok':False,'code':'library.errors.storage'},status=409)
 
     async def _api_reveal(self, req: web.Request) -> web.Response:
         slug = req.match_info["slug"]
@@ -2479,38 +2453,12 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         return await self._api_trash_move(req, 'image')
 
     async def _api_image_rename(self, req: web.Request) -> web.Response:
-        if self._trash_lock.locked():
-            return web.json_response({'code':'trash.errors.busy'}, status=409)
-        slug, path = self._image_or_404(req)
         try:
-            body = await req.json()
-        except Exception:
-            return web.json_response({"ok": False, "error": "invalid JSON"}, status=400)
-        stem = slugify_clip_name(str(body.get("name", "")))
-        if not stem:
-            return web.json_response({"ok": False, "error": "that name has nothing usable in it"})
-        if stem == slug:
-            return web.json_response(await self._image_json(slug, path))
-
-        target = path.with_name(f"{stem}{path.suffix}")
-        if target.exists():
-            return web.json_response({"ok": False, "error": "an image by that name already exists"})
-        try:
-            path.rename(target)
-        except OSError as exc:
-            log.warning("Renaming %s failed: %s", path.name, exc)
-            return web.json_response({"ok": False, "error": str(exc)})
-
-        self._images.pop(slug, None)
-        self._images[stem] = target
-        self._rename_restored_path(path, target)
-        self.games.rename_clip(image_slug(slug), image_slug(stem))
-        _purge_slug_thumbs(slug)
-        if self.playlists.on_clip_renamed(image_slug(slug), image_slug(stem)):
-            await self._broadcast_playlists()
-        await self.broadcast({"type": "image_deleted", "slug": slug})
-        await self._broadcast_image(stem, target)
-        return web.json_response(await self._image_json(stem, target))
+            return web.json_response(await self._rename_media('image',req.match_info['slug'],(await req.json()).get('name')))
+        except ValueError as exc:
+            return web.json_response({'ok':False,'code':f'library.errors.{exc}'},status=409)
+        except OSError:
+            return web.json_response({'ok':False,'code':'library.errors.storage'},status=409)
 
     async def _api_image_reveal(self, req: web.Request) -> web.Response:
         _, path = self._image_or_404(req)
@@ -2540,6 +2488,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
 
         # Written beside the original and moved into place, so an interrupted
         # save cannot leave the user with half a screenshot.
+        library_entry = self.library.ensure(path,"image")
         tmp = path.with_suffix(f".annotating{path.suffix}")
         target = path.with_suffix(".png")
         try:
@@ -2555,6 +2504,7 @@ class ShareServer(GameLibraryAPI, TrashAPI):
         if target != path:
             path.unlink(missing_ok=True)
         self._images[slug] = target
+        self.library.adopt(library_entry["id"],target,content_changed=True)
         _purge_slug_thumbs(slug)
         await self._broadcast_image(slug, target)
         return web.json_response(await self._image_json(slug, target))
@@ -2868,7 +2818,8 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             payload = {**body, 'filename': name, 'background': False,
                        'source_revisions': {slug: media_revision(source.path) for slug, source in sources.items()}}
             queued = await self._jobs.submit('export', name, payload, output_path=final,
-                                            duration=project_extent(project))
+                                            duration=project_extent(project),
+                                            source_media_ids=[self.library.ensure(source.path,'clip')['id'] for source in sources.values()],mode='export')
             return web.json_response({'ok': True, 'job_id': queued['id'], 'path': str(final)})
 
         job_id = job["id"] if job else f"exp-{int(datetime.now().timestamp() * 1000)}"
@@ -2909,8 +2860,9 @@ class ShareServer(GameLibraryAPI, TrashAPI):
             elif location != "library":
                 return None
             self.add_clip(target)
-            meta = await self._get_meta(target.stem, target)
-            return self._clip_json(target.stem, target, meta)
+            slug=self._library_slug(target)
+            meta = await self._get_meta(slug, target)
+            return self._clip_json(slug, target, meta)
 
         def cleanup() -> None:
             shutil.rmtree(work, ignore_errors=True)

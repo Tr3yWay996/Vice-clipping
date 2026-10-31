@@ -149,8 +149,8 @@ class RecordingPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.server._share_tokens['old'],token);self.assertIn('old',self.server.playlists.get(custom['id'])['clip_slugs'])
         self.assertEqual(self.games.game_for('old'),'Rocket League');self.assertEqual(self.games.game_for('img:old'),'Rocket League')
         events=[call.args[0] for call in self.server.broadcast.call_args_list]
-        self.assertTrue(any(event['type']=='clip_saved' and event['clip']['game_id']==self.game['id'] for event in events))
-        self.assertTrue(any(event['type']=='image_saved' and event['image']['game_id']==self.game['id'] for event in events))
+        self.assertTrue(any(event['type']=='clip_updated' and event['clip']['game_id']==self.game['id'] for event in events))
+        self.assertTrue(any(event['type']=='image_updated' and event['image']['game_id']==self.game['id'] for event in events))
 
     async def test_assignment_validates_entire_selection_and_requires_confirmation(self):
         from aiohttp import web

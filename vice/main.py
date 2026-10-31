@@ -1652,7 +1652,7 @@ class ViceDaemon:
                 if gid:
                     self.share.assign_media_game([image_slug(out.stem)], gid)
                     await self.share._publish_games()
-                    await self.share.broadcast({'type':'image_saved', 'image':self.share._image_basic_json(out.stem, out)})
+                    await self.share.broadcast({'type':'image_updated', 'image':self.share._image_basic_json(out.stem, out)})
         except Exception:
             log.debug("Screenshot game detection failed", exc_info=True)
 

@@ -43,6 +43,10 @@ class TrashAPI:
         for job in getattr(getattr(self, '_jobs', None), 'jobs', []):
             if job['status'] in TERMINAL:
                 continue
+            source=(self._clips.get(slug) or self._images.get(slug))
+            if source and source.exists() and getattr(self,'library',None):
+                kind='clip' if slug in self._clips else 'image'
+                if self.library.ensure(source,kind)['id'] in job.get('source_media_ids',[]):return True
             payload = job.get('payload', {})
             if payload.get('slug') == slug or slug in payload.get('source_revisions', {}):
                 return True
@@ -50,12 +54,14 @@ class TrashAPI:
 
     def _trash_detach(self, entry):
         """Idempotent metadata commit after media is safely in Trash."""
-        from .share import (HIGHLIGHTS_DIR, _save_views, _purge_slug_thumbs,
+        from .share import (_highlight_path, _save_views, _purge_slug_thumbs,
                             _purge_slug_proxies, _purge_clip_discord)
         slug, kind = entry['slug'], entry['kind']
         key = image_slug(slug) if kind == 'image' else slug
         source = Path(entry['original_dir'])/entry['name']
         index = self._images if kind == 'image' else self._clips
+        if entry['metadata'].get('library'):
+            self.library.mark_trashed(entry['metadata']['library']['id'])
         if index.get(slug) == source:
             index.pop(slug, None)
         self.playlists.on_clip_deleted(key)
@@ -67,21 +73,28 @@ class TrashAPI:
             self._meta_revisions.pop(slug, None)
             self._views.pop(slug, None)
             _save_views(self._views)
-            (HIGHLIGHTS_DIR/f'{slug}.json').unlink(missing_ok=True)
+            _highlight_path(slug).unlink(missing_ok=True)
             keystore.delete_sidecar(slug)
-            self.editor_project.on_clip_trashed(slug, entry['id'], entry['metadata'].get('editor_items', []), entry['name'])
+            self.editor_project.on_clip_trashed(slug, entry['id'], entry['metadata'].get('editor_items', []), entry['metadata'].get('library',{}).get('title') or entry['name'])
             self._keyframes.invalidate(source)
-            _purge_slug_proxies(slug)
+            _purge_slug_proxies(source.stem)
             _purge_clip_discord(source)
-        _purge_slug_thumbs(slug)
+        _purge_slug_thumbs(source.stem)
         self.trash.restored_paths.pop(str(source), None)
 
     def _trash_restore_metadata(self, entry, target):
-        from .share import HIGHLIGHTS_DIR, _save_views, _thumb_path, media_revision
+        from .share import _highlight_path, _save_views, _thumb_path, media_revision
         slug, kind, metadata = target.stem, entry['kind'], entry['metadata']
+        saved = metadata.get('library')
+        if saved:
+            self.library.entries[saved['id']] = saved
+            self.library.adopt(saved['id'],target)
+        else:
+            self.library.ensure(target,kind)
+        slug=self._library_slug(target,kind)
         key = image_slug(slug) if kind == 'image' else slug
         for name, destination in [('keys.json', keystore.sidecar_path(slug)),
-                                  ('highlights.json', HIGHLIGHTS_DIR/f'{slug}.json'),
+                                  ('highlights.json', _highlight_path(slug)),
                                   ('thumbnail.jpg', _thumb_path(target))]:
             source = self.trash.attachment(entry, name)
             if source.is_file():
@@ -138,8 +151,9 @@ class TrashAPI:
         for raw, kind in self.trash.restored_paths.items():
             path = Path(raw)
             index = self._images if kind == 'image' else self._clips
-            if path.is_file() and not path.is_symlink() and (path.stem not in index or index[path.stem] == path):
-                index[path.stem] = path
+            slug=self._library_slug(path,kind) if path.is_file() else path.stem
+            if path.is_file() and not path.is_symlink() and (slug not in index or index[slug] == path):
+                index[slug] = path
 
     def _rename_restored_path(self, old, new):
         if getattr(self, 'trash', None) and str(old) in self.trash.restored_paths:
@@ -147,7 +161,7 @@ class TrashAPI:
             self.trash.save()
 
     async def _api_trash_move(self, req, kind):
-        from .share import HIGHLIGHTS_DIR, _thumb_path, media_revision
+        from .share import _highlight_path, _thumb_path, media_revision
         slug = req.match_info['slug']
         index = self._images if kind == 'image' else self._clips
         source = index.get(slug)
@@ -161,15 +175,15 @@ class TrashAPI:
                     return web.json_response({'code':'trash.errors.busy'}, status=409)
                 key = image_slug(slug) if kind == 'image' else slug
                 project = self.editor_project.load() if kind == 'clip' else None
-                metadata = dict(media_id=media_revision(source),game=self._game_for(key), game_id=self._game_id(key),
+                metadata = dict(library=self.library.ensure(source,kind),media_id=media_revision(source),game=self._game_for(key), game_id=self._game_id(key),
                                 views=self._views.get(slug, 0) if kind == 'clip' else 0,
                                 media=self._meta.get(slug, {}) if kind == 'clip' else {},
                                 playlists=[p for p in self.playlists.list_playlists() if key in p['clip_slugs']],
                                 editor_items=[it['id'] for it in (project or {}).get('items', []) if isinstance(it, dict) and it.get('clipId') == slug])
                 attachments = {'thumbnail.jpg':_thumb_path(source)}
                 if kind == 'clip':
-                    attachments.update({'keys.json':keystore.sidecar_path(slug), 'highlights.json':HIGHLIGHTS_DIR/f'{slug}.json'})
-                entry = self.trash.move(source, kind, metadata, attachments)
+                    attachments.update({'keys.json':keystore.sidecar_path(slug), 'highlights.json':_highlight_path(slug)})
+                entry = self.trash.move(source, kind, metadata, attachments,source_slug=slug)
                 self._trash_detach(entry)
                 self.trash.commit(entry)
         except (OSError, ValueError) as exc:
@@ -260,7 +274,7 @@ class TrashAPI:
                         self._trash_restore_metadata(entry, target)
                         self.trash.discard(entry, restored=True)
                         if entry['kind'] == 'clip':
-                            await self.broadcast({'type':'clip_saved','clip':self._clip_json(target.stem,target,entry['metadata'].get('media',{}))})
+                            await self.broadcast({'type':'clip_updated','clip':self._clip_json(self._library_slug(target),target,entry['metadata'].get('media',{}))})
                         else:
                             await self._broadcast_image(target.stem, target)
                     results.append({'id':tid,'ok':True})
