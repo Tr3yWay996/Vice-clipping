@@ -32,8 +32,8 @@ The preference is saved as `ui.arrow_key_behavior = "playback"` or `"clips"` in
 Vice's existing configuration. Old configs default to playback navigation.
 Changing it needs no daemon restart and does not affect recording hotkeys.
 
-Viewer and Quick Trimmer titles now open their existing rename field with one
-click. Enter confirms and Escape cancels; see [Trash and renaming](TRASH.md) for
+Titles in galleries, Home collections, playlists, viewers and Quick Trimmer
+open the shared rename field with one click. Enter confirms and Escape cancels; see [Trash and renaming](TRASH.md) for
 playback preservation and delayed Quick Trimmer saves.
 
 Hold Space for 250 ms to start the temporary speed (2× by default). Release
@@ -147,3 +147,13 @@ build passed. The final generated assets also passed the Python UI-static checks
 The real Chromium check included the bounded decoder warm-up regression and the
 French trimmer at 894×799. Existing runtime font-path/single-bundle warnings and
 older translation gaps outside this change remain.
+
+
+## Library selection
+
+Ctrl/Meta-click toggles a card, Shift-click extends a range in the current gallery,
+and Ctrl+A selects its filtered results while that gallery has keyboard focus.
+Escape clears/exits selection, and F2 renames the one selected/focused media item.
+Checkboxes and the Select/Select All/Deselect controls provide pointer alternatives.
+Text inputs retain their own keys. See [library management](LIBRARY.md) for exact
+titles, reviewed bulk actions and processing indicators.

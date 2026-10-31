@@ -1,3 +1,4 @@
+import {MediaGallery} from '../components/MediaGallery';
 import {useMemo, useState} from 'react';
 
 import {useStore} from '../state/store';
@@ -12,7 +13,6 @@ import {publicLinkState} from '../lib/publicLink';
 import {copyToClipboard} from '../lib/clipboard';
 import {formatBytes, formatDuration, relativeTime} from '../lib/format';
 import {t, tNode} from '../lib/i18n';
-import {ClipCard} from '../components/ClipCard';
 import {Tile, ActionTile} from '../components/Tile';
 import {Modal} from '../components/Modal';
 import {IconClips, IconPlaylist, IconSettings} from '../components/Icons';
@@ -536,7 +536,6 @@ function PlaylistChip({
 function ClipRow({
   title,
   clips,
-  recentNew,
   actions,
   action,
   empty,
@@ -561,17 +560,7 @@ function ClipRow({
       {clips.length === 0 && empty ? (
         <p className="home-empty">{empty}</p>
       ) : (
-        <div className="clip-row">
-          {clips.map(clip => (
-            <ClipCard
-              key={clip.slug}
-              clip={clip}
-              draggable
-              isNew={recentNew.includes(clip.slug)}
-              actions={actions}
-            />
-          ))}
-        </div>
+        <MediaGallery clips={clips} clipActions={actions} layout="row" label={title}/>
       )}
     </section>
   );

@@ -57,11 +57,11 @@ const key = async (element: Element, name: string) => {
     if (name === ' ') element.dispatchEvent(new KeyboardEvent('keyup', {key:name, bubbles:true, cancelable:true}));
   });
 };
-async function mount() {
+async function mount(shown=clip,metadata=true) {
   await act(async () =>
     root.render(
       <TrimModal
-        clip={clip}
+        clip={shown}
         highlights={[{id: 'mark', time: 20, label: 'Win', color: '#ff0'}]}
         onClose={close}
         onSaved={vi.fn()}
@@ -72,8 +72,8 @@ async function mount() {
       />,
     ),
   );
-  Object.defineProperty(video(), 'duration', {value: 60, configurable: true});
-  await act(async () => video().dispatchEvent(new Event('loadedmetadata')));
+  if(metadata){Object.defineProperty(video(), 'duration', {value: 60, configurable: true});
+    await act(async () => video().dispatchEvent(new Event('loadedmetadata')));}
 }
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -346,4 +346,12 @@ describe('Quick Trimmer F2 and held Space',()=>{
    expect(media.playbackRate).toBe(1.25);expect(media.paused).toBe(true);
   } finally {vi.useRealTimers();}
  });
+});
+
+
+it('retains precise boundaries and preview time when the same media is renamed externally',async()=>{
+ const original={...clip,library_id:'stable',content_revision:'bytes1'};await mount(original);
+ await boundaryClick(12);video().currentTime=18;const start=value(startHandle()),end=value(endHandle());
+ await mount({...original,slug:'Exact punctuation!?',name:'Exact punctuation!?.mp4',display_title:'Exact punctuation!?'},false);
+ expect(value(startHandle())).toBe(start);expect(value(endHandle())).toBe(end);expect(video().currentTime).toBe(18);
 });

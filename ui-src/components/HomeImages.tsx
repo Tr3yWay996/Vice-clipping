@@ -1,3 +1,4 @@
+import {useGallerySelection} from '../lib/gallerySelection';
 import {useLayoutEffect, useMemo, useRef, useState} from 'react';
 
 import {hotkeyLabel} from '../lib/format';
@@ -56,6 +57,7 @@ export function HomeImages() {
   const capacity = layout.columns * layout.rows;
   const preview = useMemo(() => state.images.slice(0, capacity), [state.images, capacity]);
   const {actions, overlays} = useImageActions(preview);
+  const gallery=useGallerySelection(preview.map(item=>({kind:'image' as const,item})),entry=>{if(entry.kind==='image')actions.onBeginRename?.(entry.item);});
   const occupiedRows = Math.ceil(preview.length / layout.columns);
   const fullSpace = occupiedRows < layout.rows || capacity === 0;
   const spare = preview.length < capacity || capacity === 0;
@@ -76,10 +78,10 @@ export function HomeImages() {
             {t('home.seeAll')}
           </button>
         </header>
-        <div className="home-images-grid" ref={gridRef}
+        <div className="home-images-grid" ref={gridRef} tabIndex={0} onKeyDown={gallery.onKeyDown}
           style={{gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
             gridTemplateRows: layout.rows ? `repeat(${layout.rows}, ${layout.cardHeight}px)` : 'minmax(0, 1fr)'}}>
-          {preview.map(image => <ImageCard key={image.slug} image={image} draggable actions={actions} />)}
+          {preview.map(image => <ImageCard key={image.library_id ?? image.slug} image={image} draggable actions={actions} selection={gallery.selection({kind:'image',item:image})} />)}
           {spare ? (
             <div className="home-images-placeholder" data-compact={layout.height < 240 || !fullSpace || undefined}
               style={{gridColumn: fullSpace ? '1 / -1' : `${preview.length % layout.columns + 1} / -1`,

@@ -121,6 +121,11 @@ class KeyframeCache:
         # An older in-flight request can finish for its caller, but must never
         # publish an index for the newly replaced recording.
 
+    def renamed(self, old: Path, new: Path, revision: str) -> None:
+        result = self._results.pop((old,revision),None)
+        if result is not None:
+            self._results[(new,media_revision(new))] = result
+
     async def get(self, path: Path) -> dict:
         key = (path, media_revision(path))
         if key in self._results:

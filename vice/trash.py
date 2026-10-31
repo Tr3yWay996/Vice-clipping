@@ -140,7 +140,7 @@ class TrashStore:
             raise TrashError('unsafe')
         return path
 
-    def move(self, source, kind, metadata, attachments=None):
+    def move(self, source, kind, metadata, attachments=None, source_slug=None):
         if self.error:
             raise TrashError(self.error)
         if source.is_symlink() or not stat.S_ISREG(source.stat().st_mode):
@@ -148,7 +148,7 @@ class TrashStore:
         source = source.parent.resolve() / source.name
         info = source.stat()
         entry = dict(id=uuid.uuid4().hex, name=source.name, kind=kind,
-                     original_dir=str(source.parent), slug=source.stem,
+                     original_dir=str(source.parent), slug=source_slug or source.stem,
                      deleted_at_ns=self.clock(), mtime_ns=info.st_mtime_ns,
                      size=info.st_size, identity=identity(source),
                      state='moving', metadata=copy.deepcopy(metadata))
@@ -198,6 +198,7 @@ class TrashStore:
                 pass
             expiry = entry['deleted_at_ns'] + days * 86400 * 10**9 if days else None
             result.append(dict(id=entry['id'], name=entry['name'], kind=entry['kind'], size=size,
+                               display_title=entry['metadata'].get('library',{}).get('title'), library_id=entry['metadata'].get('library',{}).get('id'),
                                original_dir=entry['original_dir'], source_slug=entry['slug'], media_id=entry['metadata'].get('media_id'),
                                game=entry['metadata'].get('game'), game_id=entry['metadata'].get('game_id'),
                                created_at=datetime.fromtimestamp(entry['mtime_ns']/1e9, timezone.utc).isoformat(),

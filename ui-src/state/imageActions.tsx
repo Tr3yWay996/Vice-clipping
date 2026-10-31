@@ -1,4 +1,4 @@
-import {useCallback, useMemo, useState, type ReactNode} from 'react';
+import {useCallback, useMemo, useState, useRef, useEffect, type ReactNode} from 'react';
 
 import {api} from '../lib/api';
 import {imageSlug, imageTitle, type Image} from '../lib/types';
@@ -33,8 +33,12 @@ export function useImageActions(collection?: Image[]): {actions: ImageActionSet;
     .map(slug => state.images.find(image => image.slug === slug))
     .filter((image): image is Image => Boolean(image)), [sequence, visibleImages, state.images]);
   // Rename broadcasts deletion of the old slug before its replacement arrives.
+  const lastViewed=useRef<Image|null>(null);
   const viewingImage = navigation.find(i => i.slug === viewing)
+    ?? (viewing && lastViewed.current?.library_id?state.images.find(image=>image.library_id===lastViewed.current?.library_id):null)
     ?? (pendingRename?.slug === viewing ? pendingRename : null);
+  lastViewed.current=viewingImage??null;
+  useEffect(()=>{if(viewingImage&&viewingImage.slug!==viewing){const old=viewing;setViewing(viewingImage.slug);setSequence(sequence=>sequence?.map(slug=>slug===old?viewingImage.slug:slug)??null);}},[viewingImage,viewing]);
   const openImage = useCallback((image: Image) => {
     setSequence(collection ? collection.map(item => item.slug) : null);
     setViewing(image.slug);
@@ -92,15 +96,9 @@ export function useImageActions(collection?: Image[]): {actions: ImageActionSet;
           setPendingRename(updated);
           setViewing(current => (current === image.slug ? updated.slug : current));
           setSequence(current => current?.map(slug => slug === image.slug ? updated.slug : slug) ?? null);
-          if (imageTitle(updated) !== name) {
-            notify({
-              kind: 'info',
-              title: t('card.savedAs', {name: imageTitle(updated)}),
-              tone: 'neutral',
-              holdMs: 4000,
-            });
-          }
+
         }
+        if(updated?.metadata_only)say(t('library.titleOnlySaved',{name:updated.name}));
         await refreshImages();
       } catch (err) {
         notify({
@@ -124,6 +122,7 @@ export function useImageActions(collection?: Image[]): {actions: ImageActionSet;
       onReveal: reveal,
       onDelete: setConfirmDelete,
       onRename: rename,
+      onBeginRename:image=>setRenaming(image.slug),
       onContextMenu: (image, at) => setMenu({image, at}),
       renamingSlug: renaming,
       onRenameDone: () => setRenaming(null),

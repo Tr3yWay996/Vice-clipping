@@ -130,7 +130,7 @@
     "unreadableNote": "{reason}. The file is still on disk.",
     "unreadableFallback": "ffmpeg could not read this file",
     "openTitle": "Open {name}",
-    "renameHint": "{name}, double-click to rename",
+    "renameHint": "Click to rename {name} · F2",
     "trim": "Trim",
     "copyVideo": "Copy video to clipboard",
     "copyShareLink": "Copy share link",
@@ -1259,5 +1259,93 @@
       "other": "Assign these {count} recordings to {name}?"
     },
     "empty": "No recordings match."
+  },
+  "library": {
+    "gallery": "Media gallery",
+    "select": "Select",
+    "exitSelection": "Exit selection",
+    "selectVisible": "Select all filtered items",
+    "deselectVisible": "Deselect filtered items",
+    "selectItem": "Select {name}",
+    "bulkActions": "Selected media actions",
+    "selected": {
+      "one": "{count} selected",
+      "other": "{count} selected"
+    },
+    "clear": "Clear selection",
+    "scope": "Select All applies to this gallery’s filtered items. Selection is kept across views.",
+    "renameLimit": "Rename up to 1,000 items per batch.",
+    "processingDetails": "Processing details",
+    "stopAfterBatch": "Stop after this batch",
+    "apply": "Apply to {count} items",
+    "review": "Review the {count} selected items before applying.",
+    "trashConfirm": "Move these {count} items to Trash? They can be restored there.",
+    "playlistHelp": "Playlist organization changes membership only. Original files stay in their directories.",
+    "gameHelp": "Apply the selected game to these recordings, or remove their game association. Automatic playlists follow this change.",
+    "mode": "Rename mode",
+    "patternHelp": "Use {title}, {index}, {index:03d}, {date} and {game}. Date uses the original recording date.",
+    "sourcePlaylist": "Move from custom playlist",
+    "playlist": "Playlist",
+    "choosePlaylist": "Choose a playlist",
+    "removeGame": "Remove game association",
+    "previewing": "Preparing rename preview…",
+    "before": "Current title",
+    "after": "New title",
+    "file": "Physical filename",
+    "metadataOnly": "Display title only; physical filename stays unchanged.",
+    "titleOnlySaved": "Title saved. Physical filename remains {name}.",
+    "manualCopy": "Copy this text manually",
+    "progress": "Batch progress",
+    "results": "{success} succeeded · {failed} failed · {total} attempted",
+    "action": {
+      "rename": "Bulk rename",
+      "playlist-add": "Add to playlist",
+      "playlist-remove": "Remove from playlist",
+      "playlist-move": "Move between playlists",
+      "game": "Assign game",
+      "trash": "Move to Trash",
+      "paths": "Copy file paths",
+      "share-links": "Copy sharing links",
+      "reveal": "Reveal files"
+    },
+    "renameMode": {
+      "replace": "Replace text",
+      "prefix": "Add prefix",
+      "suffix": "Add suffix",
+      "number": "Sequential numbering",
+      "pattern": "Naming pattern"
+    },
+    "field": {
+      "find": "Find",
+      "replace": "Replace with",
+      "text": "Text",
+      "prefix": "Prefix",
+      "suffix": "Suffix",
+      "start": "First index",
+      "width": "Number width",
+      "pattern": "Pattern"
+    },
+    "errors": {
+      "title": "Enter a nonempty title of at most 4,096 UTF-8 bytes.",
+      "missing": "This media is no longer available.",
+      "changed": "The media or its title changed. Refresh the preview and try again.",
+      "collision": "That physical filename is already in use. No file was overwritten.",
+      "busy": "This source is being processed. Wait or cancel its queue job before renaming the file.",
+      "storage": "The storage operation could not be completed.",
+      "selection": "Choose between 1 and 1,000 valid items.",
+      "confirm": "Review and confirm this operation.",
+      "pattern": "The naming pattern or index is invalid.",
+      "find": "Enter the text to replace.",
+      "mode": "Choose a rename mode.",
+      "target": "Choose an available recognized game.",
+      "playlist": "Choose valid playlists; moves must start in a custom playlist.",
+      "share": "Sharing links are available for video clips only."
+    },
+    "jobMode": {
+      "copy": "Save a copy",
+      "replace": "Replace original",
+      "export": "Export",
+      "prepare": "Prepare for sharing"
+    }
   }
 }

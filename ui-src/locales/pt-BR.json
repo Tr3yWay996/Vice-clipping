@@ -118,7 +118,7 @@
     "unreadableNote": "{reason}. O arquivo permanece no disco.",
     "unreadableFallback": "ffmpeg não conseguiu ler este arquivo",
     "openTitle": "Abrir {name}",
-    "renameHint": "{name}, duplo-clique para renomear",
+    "renameHint": "Clique para renomear {name} · F2",
     "trim": "Recortar",
     "copyVideo": "Copiar vídeo para a área de transferência",
     "copyShareLink": "Copiar link de compartilhamento",
@@ -1123,5 +1123,93 @@
       "other": "Associar estas {count} gravações a {name}?"
     },
     "empty": "Nenhuma gravação corresponde."
+  },
+  "library": {
+    "gallery": "Galeria de mídia",
+    "select": "Selecionar",
+    "exitSelection": "Sair da seleção",
+    "selectVisible": "Selecionar todos os itens filtrados",
+    "deselectVisible": "Desmarcar itens filtrados",
+    "selectItem": "Selecionar {name}",
+    "bulkActions": "Ações da mídia selecionada",
+    "selected": {
+      "one": "{count} selecionado",
+      "other": "{count} selecionados"
+    },
+    "clear": "Limpar seleção",
+    "scope": "Selecionar tudo inclui os resultados filtrados desta galeria. A seleção é mantida entre as telas.",
+    "renameLimit": "Renomeie até 1.000 itens por lote.",
+    "processingDetails": "Detalhes do processamento",
+    "stopAfterBatch": "Parar após este lote",
+    "apply": "Aplicar a {count} itens",
+    "review": "Revise os {count} itens selecionados antes de aplicar.",
+    "trashConfirm": "Mover estes {count} itens para a Lixeira? Eles poderão ser restaurados lá.",
+    "playlistHelp": "Organizar playlists altera apenas os vínculos. Os arquivos originais ficam nas mesmas pastas.",
+    "gameHelp": "Associe o jogo escolhido às gravações ou remova a associação. As playlists automáticas acompanham a alteração.",
+    "mode": "Modo de renomeação",
+    "patternHelp": "Use {title}, {index}, {index:03d}, {date} e {game}. A data é a da gravação original.",
+    "sourcePlaylist": "Mover de uma playlist personalizada",
+    "playlist": "Playlist",
+    "choosePlaylist": "Escolher uma playlist",
+    "removeGame": "Remover associação de jogo",
+    "previewing": "Preparando prévia dos nomes…",
+    "before": "Título atual",
+    "after": "Novo título",
+    "file": "Nome do arquivo",
+    "metadataOnly": "Somente título exibido; o nome do arquivo é mantido.",
+    "titleOnlySaved": "Título salvo. O arquivo continua com o nome {name}.",
+    "manualCopy": "Copie este texto manualmente",
+    "progress": "Progresso do lote",
+    "results": "{success} concluídos · {failed} falharam · {total} tentados",
+    "action": {
+      "rename": "Renomear em lote",
+      "playlist-add": "Adicionar à playlist",
+      "playlist-remove": "Remover da playlist",
+      "playlist-move": "Mover entre playlists",
+      "game": "Associar jogo",
+      "trash": "Mover para a Lixeira",
+      "paths": "Copiar caminhos",
+      "share-links": "Copiar links de compartilhamento",
+      "reveal": "Mostrar arquivos"
+    },
+    "renameMode": {
+      "replace": "Substituir texto",
+      "prefix": "Adicionar prefixo",
+      "suffix": "Adicionar sufixo",
+      "number": "Numeração sequencial",
+      "pattern": "Padrão de nome"
+    },
+    "field": {
+      "find": "Localizar",
+      "replace": "Substituir por",
+      "text": "Texto",
+      "prefix": "Prefixo",
+      "suffix": "Sufixo",
+      "start": "Primeiro índice",
+      "width": "Quantidade de dígitos",
+      "pattern": "Padrão"
+    },
+    "errors": {
+      "title": "Digite um título não vazio de até 4.096 bytes UTF-8.",
+      "missing": "Esta mídia não está mais disponível.",
+      "changed": "A mídia ou o título mudou. Atualize a prévia e tente novamente.",
+      "collision": "Este nome de arquivo já está em uso. Nenhum arquivo foi sobrescrito.",
+      "busy": "Esta fonte está sendo processada. Aguarde ou cancele a tarefa antes de renomear o arquivo.",
+      "storage": "Não foi possível concluir a operação de armazenamento.",
+      "selection": "Escolha entre 1 e 1.000 itens válidos.",
+      "confirm": "Revise e confirme esta operação.",
+      "pattern": "O padrão de nome ou índice é inválido.",
+      "find": "Digite o texto a substituir.",
+      "mode": "Escolha um modo de renomeação.",
+      "target": "Escolha um jogo reconhecido disponível.",
+      "playlist": "Escolha playlists válidas; o movimento deve partir de uma playlist personalizada.",
+      "share": "Links de compartilhamento estão disponíveis apenas para clipes de vídeo."
+    },
+    "jobMode": {
+      "copy": "Salvar uma cópia",
+      "replace": "Substituir original",
+      "export": "Exportar",
+      "prepare": "Preparar compartilhamento"
+    }
   }
 }

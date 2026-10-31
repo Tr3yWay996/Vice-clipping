@@ -17,3 +17,12 @@ it('F2 edits only the focused library card, selects its name and cancels without
  await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
  expect(rename).not.toHaveBeenCalled();expect(open).not.toHaveBeenCalled();expect(cards[1].querySelector('input')).toBeNull();
 });
+it('clicking a title preserves leading spaces, punctuation and Unicode on blur without opening or dragging',async()=>{
+ const rename=vi.fn(),open=vi.fn();const clip={slug:'original',name:'Original.mp4',display_title:"Ça, c'était beau."} as Clip;
+ await act(async()=>root.render(<ClipCard clip={clip} draggable actions={{onRename:rename,onOpen:open}}/>));
+ const title=container.querySelector('.clip-name')!;await act(async()=>title.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true})));
+ const input=container.querySelector('input')!;expect(input.value).toBe("Ça, c'était beau.");expect(document.activeElement).toBe(input);expect(input.selectionEnd).toBe(input.value.length);
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'  What a save!? 🎮  ');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true})));
+ expect(rename).toHaveBeenCalledExactlyOnceWith(clip,'  What a save!? 🎮  ');expect(open).not.toHaveBeenCalled();
+});

@@ -31,15 +31,7 @@ export function useRenameClip(): (clip: Clip, name: string) => Promise<Clip | nu
       try {
         const updated = await api.renameClip(clip.slug, name);
         await refreshClips();
-        if (updated?.name && clipTitle(updated) !== name) {
-          // Punctuation is normalised server side, so say what landed on disk.
-          notify({
-            kind: 'info',
-            title: t('card.savedAs', {name: clipTitle(updated)}),
-            tone: 'neutral',
-            holdMs: 4000,
-          });
-        }
+        if(updated?.metadata_only)notify({kind:'info',title:t('library.titleOnlySaved',{name:updated.name}),tone:'neutral',holdMs:5000});
         return updated ?? null;
       } catch (err) {
         notify({
@@ -128,6 +120,7 @@ export function useClipActions(): {actions: ClipActions; overlays: ReactNode} {
       onReveal: reveal,
       onDelete: setConfirmDelete,
       onRename: rename,
+      onBeginRename:clip=>setRenaming(clip.slug),
       onContextMenu: (clip, at) => setMenu({clip, at}),
       renamingSlug: renaming,
       onRenameDone: () => setRenaming(null),

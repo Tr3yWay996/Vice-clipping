@@ -1,3 +1,6 @@
+import type {CardSelection} from '../lib/gallerySelection';
+import {MediaJobBadge} from './MediaJobBadge';
+import type {ProcessingJob} from '../lib/types';
 import {useEffect, useRef, useState} from 'react';
 
 import {endClipDrag, startClipDrag, prepareClipDrag} from '../lib/clipDrag';
@@ -30,6 +33,7 @@ export interface ClipActions {
   onShareMenu?: (clip: Clip) => void;
   /** Tooltip for the Share button, which depends on what it copies. */
   shareLabel?: string;
+  onBeginRename?: (clip:Clip) => void;
   onRename?: (clip: Clip, name: string) => Promise<void>;
   onContextMenu?: (clip: Clip, at: {x: number; y: number}) => void;
   /** Set by the context menu to open this card's rename field. */
@@ -41,12 +45,13 @@ export function ClipCard({
   clip,
   isNew,
   actions = {},
-  draggable,
+  draggable, selection, job, onJob,
 }: {
   clip: Clip;
   isNew?: boolean;
   actions?: ClipActions;
   draggable?: boolean;
+  selection?:CardSelection; job?:ProcessingJob; onJob?:()=>void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const cardRef = useRef<HTMLElement>(null);
@@ -67,6 +72,7 @@ export function ClipCard({
     return true;
   });
 
+  useEffect(()=>{if(selection?.active)videoRef.current?.pause();},[selection?.active]);
   const broken = clip.unreadable;
   const canPreview = H264_SUPPORTED && !broken && !previewFailed && Boolean(clip.thumb_url);
 
@@ -74,7 +80,7 @@ export function ClipCard({
 
   const attachPreview = () => {
     const video = videoRef.current;
-    if (!video || !canPreview) return;
+    if (!video || !canPreview || selection?.active) return;
     window.clearTimeout(releaseTimer.current);
     // Same source the viewer uses, so an H.265 library previews through the
     // proxy instead of showing a black card.
@@ -122,11 +128,19 @@ export function ClipCard({
       tabIndex={0}
       className="clip-card"
       data-broken={broken || undefined}
-      draggable={draggable && !renaming}
+      draggable={draggable && !renaming && !selection?.active}
       onPointerEnter={() => prepareClipDrag(clip)}
       onFocus={() => prepareClipDrag(clip)}
-      onDragStart={e => startClipDrag(e, clip)}
+      onDragStart={e => {if(e.ctrlKey||e.metaKey||e.shiftKey||selection?.active)e.preventDefault();else startClipDrag(e, clip);}}
       onDragEnd={endClipDrag}
+      data-media-id={clip.library_id}
+      data-selected={selection?.selected||undefined}
+      onClickCapture={event=>{
+        const target=event.target as HTMLElement;
+        if(!selection || target.closest('.clip-name,.clip-rename,.media-select,.media-job,.clip-actions'))return;
+        if(selection.active||event.ctrlKey||event.metaKey||event.shiftKey){event.preventDefault();event.stopPropagation();
+          cardRef.current?.focus();selection.onSelect(event);}
+      }}
       onContextMenu={e => {
         if (!actions.onContextMenu) return;
         e.preventDefault();
@@ -135,8 +149,7 @@ export function ClipCard({
       onClick={e => {
         // The whole card opens the clip, not just the thumbnail. Anything that
         // already does something of its own is left alone: the action row, the
-        // rename field, and the title, which takes a double-click to rename and
-        // would never get its second click if the first one opened the viewer.
+        // rename field, and the title, whose single click begins editing.
         if (renaming) return;
         const target = e.target as HTMLElement;
         if (target.closest('button, a, input, textarea, .clip-name')) return;
@@ -180,6 +193,10 @@ export function ClipCard({
         ) : null}
       </button>
 
+      {selection?.active?<input className="media-select" type="checkbox" checked={selection.selected}
+        aria-label={t('library.selectItem',{name:clipTitle(clip)})}
+        onChange={()=>{}} onClick={event=>{event.stopPropagation();selection.onSelect(event);}}/>:null}
+      <MediaJobBadge job={job} onOpen={()=>onJob?.()}/>
       <div className="clip-body">
         {renaming ? (
           <InlineRename
@@ -196,7 +213,10 @@ export function ClipCard({
           <h3
             className="clip-name"
             title={t('card.renameHint', {name: clipTitle(clip)})}
-            onDoubleClick={() => actions.onRename && setRenamingHere(true)}>
+            role={actions.onRename?'button':undefined} tabIndex={actions.onRename?0:undefined}
+            onMouseDown={event=>event.preventDefault()} onPointerDown={event=>event.stopPropagation()} onDragStart={event=>event.preventDefault()}
+            onClick={event=>{event.stopPropagation();if(actions.onRename)setRenamingHere(true);}}
+            onKeyDown={event=>{if(actions.onRename && ['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();setRenamingHere(true);}}}>
             {clipTitle(clip)}
           </h3>
         )}

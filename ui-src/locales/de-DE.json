@@ -126,7 +126,7 @@
     "unreadableNote": "{reason}. Die Datei liegt weiterhin auf der Festplatte.",
     "unreadableFallback": "ffmpeg konnte diese Datei nicht lesen",
     "openTitle": "{name} öffnen",
-    "renameHint": "{name}, zum Umbenennen doppelklicken",
+    "renameHint": "{name} zum Umbenennen anklicken · F2",
     "trim": "Kürzen",
     "copyVideo": "Video in die Zwischenablage kopieren",
     "copyShareLink": "Link zum Teilen kopieren",
@@ -1191,5 +1191,93 @@
       "other": "Diese {count} Aufnahmen {name} zuordnen?"
     },
     "empty": "Keine passenden Aufnahmen."
+  },
+  "library": {
+    "gallery": "Mediengalerie",
+    "select": "Auswählen",
+    "exitSelection": "Auswahl beenden",
+    "selectVisible": "Alle gefilterten Elemente auswählen",
+    "deselectVisible": "Gefilterte Auswahl aufheben",
+    "selectItem": "{name} auswählen",
+    "bulkActions": "Aktionen für ausgewählte Medien",
+    "selected": {
+      "one": "{count} ausgewählt",
+      "other": "{count} ausgewählt"
+    },
+    "clear": "Auswahl löschen",
+    "scope": "Alle auswählen gilt für die gefilterten Elemente dieser Galerie. Die Auswahl bleibt über Ansichten hinweg erhalten.",
+    "renameLimit": "Bis zu 1.000 Elemente pro Stapel umbenennen.",
+    "processingDetails": "Verarbeitungsdetails",
+    "stopAfterBatch": "Nach diesem Stapel stoppen",
+    "apply": "Auf {count} Elemente anwenden",
+    "review": "Die {count} ausgewählten Elemente vor dem Anwenden prüfen.",
+    "trashConfirm": "Diese {count} Elemente in den Papierkorb verschieben? Dort lassen sie sich wiederherstellen.",
+    "playlistHelp": "Die Playlist-Organisation ändert nur Mitgliedschaften. Originaldateien bleiben in ihren Ordnern.",
+    "gameHelp": "Das ausgewählte Spiel zuordnen oder die Spielzuordnung entfernen. Automatische Playlists folgen dieser Änderung.",
+    "mode": "Umbenennungsmodus",
+    "patternHelp": "{title}, {index}, {index:03d}, {date} und {game} verwenden. Das Datum stammt von der Originalaufnahme.",
+    "sourcePlaylist": "Aus eigener Playlist verschieben",
+    "playlist": "Playlist",
+    "choosePlaylist": "Playlist auswählen",
+    "removeGame": "Spielzuordnung entfernen",
+    "previewing": "Umbenennungsvorschau wird vorbereitet…",
+    "before": "Aktueller Titel",
+    "after": "Neuer Titel",
+    "file": "Dateiname",
+    "metadataOnly": "Nur Anzeigetitel; der Dateiname bleibt erhalten.",
+    "titleOnlySaved": "Titel gespeichert. Der Dateiname bleibt {name}.",
+    "manualCopy": "Diesen Text manuell kopieren",
+    "progress": "Stapelfortschritt",
+    "results": "{success} erfolgreich · {failed} fehlgeschlagen · {total} versucht",
+    "action": {
+      "rename": "Stapelweise umbenennen",
+      "playlist-add": "Zur Playlist hinzufügen",
+      "playlist-remove": "Aus Playlist entfernen",
+      "playlist-move": "Zwischen Playlists verschieben",
+      "game": "Spiel zuordnen",
+      "trash": "In den Papierkorb",
+      "paths": "Dateipfade kopieren",
+      "share-links": "Freigabelinks kopieren",
+      "reveal": "Dateien anzeigen"
+    },
+    "renameMode": {
+      "replace": "Text ersetzen",
+      "prefix": "Präfix hinzufügen",
+      "suffix": "Suffix hinzufügen",
+      "number": "Fortlaufende Nummerierung",
+      "pattern": "Namensmuster"
+    },
+    "field": {
+      "find": "Suchen",
+      "replace": "Ersetzen durch",
+      "text": "Text",
+      "prefix": "Präfix",
+      "suffix": "Suffix",
+      "start": "Erster Index",
+      "width": "Ziffernanzahl",
+      "pattern": "Muster"
+    },
+    "errors": {
+      "title": "Einen nicht leeren Titel mit höchstens 4.096 UTF-8-Bytes eingeben.",
+      "missing": "Dieses Medium ist nicht mehr verfügbar.",
+      "changed": "Medium oder Titel wurde geändert. Vorschau aktualisieren und erneut versuchen.",
+      "collision": "Dieser Dateiname wird bereits verwendet. Keine Datei wurde überschrieben.",
+      "busy": "Diese Quelle wird verarbeitet. Vor dem Umbenennen warten oder den Auftrag abbrechen.",
+      "storage": "Der Speichervorgang konnte nicht abgeschlossen werden.",
+      "selection": "Zwischen 1 und 1.000 gültige Elemente auswählen.",
+      "confirm": "Diesen Vorgang prüfen und bestätigen.",
+      "pattern": "Namensmuster oder Index ist ungültig.",
+      "find": "Den zu ersetzenden Text eingeben.",
+      "mode": "Einen Umbenennungsmodus auswählen.",
+      "target": "Ein verfügbares erkanntes Spiel auswählen.",
+      "playlist": "Gültige Playlists wählen; Verschiebungen beginnen in einer eigenen Playlist.",
+      "share": "Freigabelinks sind nur für Videoclips verfügbar."
+    },
+    "jobMode": {
+      "copy": "Kopie speichern",
+      "replace": "Original ersetzen",
+      "export": "Exportieren",
+      "prepare": "Freigabe vorbereiten"
+    }
   }
 }

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .runtime import actual_home_dir
+from .media import bounded_component
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ class KeyRing:
 
 
 def sidecar_path(slug: str) -> Path:
-    return KEYS_DIR / f"{slug}.json"
+    return KEYS_DIR / f"{bounded_component(slug,250)}.json"
 
 
 def save_sidecar(slug: str, intervals: list[list]) -> None:

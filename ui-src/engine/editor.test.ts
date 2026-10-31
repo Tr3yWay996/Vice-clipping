@@ -10,6 +10,7 @@ const fixture=():EdProject=>({version:1,tracks:[{id:'V1',type:'video',label:'V1'
 ]});
 const renameSource=vi.fn();
 let boostMultiplier=2;
+let previewClips:Clip[];
 let engine:EditorEngine,root:HTMLElement,notify:ReturnType<typeof vi.fn<(title:string,tone?:'accent'|'error')=>void>>;
 const key=(name:string,extra:KeyboardEventInit={},target:Element=document.body)=>{
  const event=new KeyboardEvent('keydown',{key:name,bubbles:true,cancelable:true,...extra});target.dispatchEvent(event);return event;
@@ -20,7 +21,7 @@ beforeEach(async()=>{
  vi.stubGlobal('matchMedia',()=>({matches:true}));
  root=document.createElement('div');root.className='editor';document.body.append(root);
  const nodes=Array.from({length:6},()=>{const el=document.createElement('div');root.append(el);return el;});
- notify=vi.fn();renameSource.mockClear();boostMultiplier=2;engine=createEditorEngine({clips:()=>[clip],notify,accent:()=> '#0099ff',renameSource,
+ notify=vi.fn();renameSource.mockClear();boostMultiplier=2;previewClips=[clip];engine=createEditorEngine({clips:()=>previewClips,notify,accent:()=> '#0099ff',renameSource,
   playbackBoost:()=>({multiplier:()=>boostMultiplier,setMultiplier:rate=>{boostMultiplier=rate;}})});await engine.load();
  engine.mount({stage:nodes[0],stageWrap:nodes[1],timelineCanvas:nodes[2],timelineScroll:nodes[3],libraryScroll:nodes[4],fadeOverlay:nodes[5]});
  engine.select('v');engine.seek(8);
@@ -140,4 +141,15 @@ describe('editor playback-only speed and source renaming',()=>{
   engine.select(null);const library=root.querySelector<HTMLElement>('.ed-lib-clip')!;library.focus();key('F2');expect(renameSource).toHaveBeenCalledExactlyOnceWith(clip);
   renameSource.mockClear();const field=document.createElement('input');root.append(field);key('F2',{},field);expect(renameSource).not.toHaveBeenCalled();
  });
+});
+
+
+it('keeps the same decoder source during rename reconciliation even if another recording reuses the old slug',async()=>{
+ previewClips=[{...clip,library_id:'stable'}];engine.setClips(previewClips);engine.seek(8);
+ const video=root.querySelector<HTMLVideoElement>('video:not(.ed-vhide)')!;const src=video.getAttribute('src');
+ previewClips=[{...clip,slug:'New title!?',name:'New title!?.mp4',library_id:'stable'}, {...clip,library_id:'different',video_url:'/wrong-video'}];
+ engine.setClips(previewClips);engine.seek(8.2);
+ expect(root.querySelector('[data-item=v]')!.classList.contains('missing')).toBe(false);expect(video.getAttribute('src')).toBe(src);
+ const remote=fixture();remote.items.forEach(item=>{item.clipId='New title!?';});vi.mocked(fetch).mockResolvedValue({ok:true,json:async()=>({project:remote})} as Response);
+ await engine.onProjectChanged();expect(engine.project()!.items[0].clipId).toBe('New title!?');expect(video.getAttribute('src')).toBe(src);
 });

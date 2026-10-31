@@ -8,6 +8,11 @@
 export interface Clip {
   slug: string;
   media_id?: string | null;
+  library_id?: string;
+  display_title?: string;
+  content_revision?: string;
+  metadata_only?: boolean;
+  physical_rename?: boolean;
   /** The filename, extension included. Use clipTitle() for display. */
   name: string;
   size: number;
@@ -30,6 +35,7 @@ export interface Clip {
   share_is_public: boolean;
   /** Already carries a content revision, so it can be used as a cache key. */
   video_url: string;
+  audio_url?: string;
   thumb_url: string;
 }
 
@@ -41,6 +47,11 @@ export interface Clip {
 export interface Image {
   slug: string;
   media_id?: string | null;
+  library_id?: string;
+  display_title?: string;
+  content_revision?: string;
+  metadata_only?: boolean;
+  physical_rename?: boolean;
   /** The filename, extension included. Use imageTitle() for display. */
   name: string;
   size: number;
@@ -154,8 +165,12 @@ export type WsMessage =
   | {type: 'games_changed'; games: DetectedGame[]; revision: number}
   | {type: 'jobs_changed'; jobs: ProcessingJob[]}
   | {type: 'clip_saved'; clip: Clip}
+  | {type: 'clip_updated'; clip: Clip}
+  | {type: 'clip_renamed'; old_slug: string; clip: Clip}
   | {type: 'clip_deleted'; slug: string}
   | {type: 'image_saved'; image: Image}
+  | {type: 'image_updated'; image: Image}
+  | {type: 'image_renamed'; old_slug: string; image: Image}
   | {type: 'image_deleted'; slug: string}
   | {type: 'image_error'; error?: string}
   | {type: 'image_copy_failed'; error?: string}
@@ -182,11 +197,11 @@ export type ViewName = 'home' | 'clips' | 'images' | 'editor' | 'settings' | 'tr
 
 /** The filename without its extension, which is what every screen shows. */
 export function clipTitle(clip: Clip): string {
-  return clip.name.replace(/\.(mp4|mkv|mov|webm)$/i, '');
+  return clip.display_title ?? clip.name.replace(/\.(mp4|mkv|mov|webm)$/i, '');
 }
 
 export function imageTitle(image: Image): string {
-  return image.name.replace(/\.(png|jpe?g)$/i, '');
+  return image.display_title ?? image.name.replace(/\.(png|jpe?g)$/i, '');
 }
 
 /**
@@ -203,6 +218,8 @@ export interface ProcessingJob {
   operation: 'trim' | 'export' | 'prepare';
   name: string;
   source_revision: string | null;
+  source_media_ids?: string[];
+  mode?: string | null;
   output_path: string | null;
   created_at: string;
   started_at: string | null;
@@ -237,6 +254,7 @@ export interface DetectedGame {
 }
 
 export interface TrashItem {
+  display_title?:string|null;library_id?:string;
   id: string; name: string; source_slug?:string; media_id?:string|null; kind: 'clip'|'image'; size: number; original_dir: string;
   game: string|null; game_id?:string|null; created_at: string; deleted_at: string; remaining_seconds: number|null;
   available: boolean; state: string; thumbnail_url: string|null;
@@ -244,3 +262,8 @@ export interface TrashItem {
 export interface TrashSnapshot {
   items: TrashItem[]; total_bytes: number; retention_days: number; error: string|null;
 }
+
+export type LibraryMedia = {kind:'clip'; item:Clip} | {kind:'image'; item:Image};
+export const libraryKey = (media:LibraryMedia) => media.item.library_id ?? `${media.kind}:${media.item.slug}`;
+export interface RenamePlan {id:string;kind:'clip'|'image';slug:string;title:string;filename:string;previous_title:string;revision:string;physical_rename:boolean;metadata_only:boolean;code?:string}
+export interface LibraryResult {id:string;ok:boolean;code?:string;value?:string;item?:Clip|Image}

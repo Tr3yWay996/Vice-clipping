@@ -15,7 +15,7 @@ import {formatDuration, hotkeyLabel} from '../lib/format';
 import {H264_SUPPORTED} from '../lib/env';
 import {ACCENT_NAMES, DEFAULT_ACCENT} from '../theme/accents';
 import type {AccentChoice} from '../theme/viceTheme';
-import {clipTitle, imageSlug, imageTitle, type KeyOverlayState} from '../lib/types';
+import {clipTitle, imageSlug, imageTitle, libraryKey, type KeyOverlayState} from '../lib/types';
 import type {
   Clip,
   Config,
@@ -62,6 +62,7 @@ interface State {
   games: DetectedGame[];
   gamesLoaded: boolean;
   settingsSection: string | null;
+  queueJobId: string | null;
   loadError: string | null;
   config: Config | null;
   clips: Clip[];
@@ -73,6 +74,9 @@ interface State {
   update: UpdateInfo | null;
   /** Slugs that arrived this session, for the "new" treatment in the grid. */
   recentNew: string[];
+  selectionMode: boolean;
+  selectedMedia: string[];
+  selectionAnchor: string | null;
   view: ViewName;
   currentPlaylistId: string | null;
   searchQuery: string;
@@ -113,6 +117,7 @@ const initialState: State = {
   games: [],
   gamesLoaded: false,
   settingsSection: null,
+  queueJobId:null,
   loadError: null,
   config: null,
   clips: [],
@@ -123,6 +128,9 @@ const initialState: State = {
   tunnelError: false,
   update: null,
   recentNew: [],
+  selectionMode:false,
+  selectedMedia:[],
+  selectionAnchor:null,
   view: 'home',
   currentPlaylistId: null,
   searchQuery: '',
@@ -135,6 +143,13 @@ const initialState: State = {
 };
 
 type Action =
+  | {type:'selectionMode'; active:boolean}
+  | {type:'selectMedia'; id:string; visible:string[]; range?:boolean; toggle?:boolean}
+  | {type:'selectAllMedia'; ids:string[]}
+  | {type:'clearSelection'}
+  | {type:'unselectMedia'; ids:string[]}
+  | {type:'showQueue'; jobId?:string}
+
   | {
       type: 'loaded';
       config: Config;
@@ -197,6 +212,20 @@ function withTrash(state: State, trash: TrashSnapshot | null): State {
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
+    case 'showQueue': return {...state,queueJobId:action.jobId ?? null};
+    case 'selectionMode': return {...state,selectionMode:action.active,selectedMedia:action.active?state.selectedMedia:[],selectionAnchor:null};
+    case 'clearSelection':return {...state,selectedMedia:[],selectionMode:false,selectionAnchor:null};
+    case 'unselectMedia':return {...state,selectedMedia:state.selectedMedia.filter(id=>!action.ids.includes(id))};
+    case 'selectAllMedia':return {...state,selectionMode:true,selectedMedia:[...new Set([...state.selectedMedia,...action.ids])]};
+    case 'selectMedia': {
+      const selected=new Set(state.selectedMedia);
+      const anchor=state.selectionAnchor ? action.visible.indexOf(state.selectionAnchor) : -1;
+      const at=action.visible.indexOf(action.id);
+      if(action.range && anchor>=0 && at>=0) action.visible.slice(Math.min(at,anchor),Math.max(at,anchor)+1).forEach(id=>selected.add(id));
+      else if(action.toggle && selected.has(action.id))selected.delete(action.id);
+      else selected.add(action.id);
+      return {...state,selectionMode:true,selectedMedia:[...selected],selectionAnchor:action.range?state.selectionAnchor:action.id};
+    }
     case 'loaded': {
       const loaded: State = {
         ...state,
@@ -314,11 +343,28 @@ function reduceWs(state: State, msg: WsMessage): State {
       return withGames(state,msg.games);
     case 'jobs_changed':
       return {...state, jobs: msg.jobs, jobsLoaded: true};
+    case 'clip_updated':
+    case 'clip_renamed': {
+      const old='old_slug' in msg?msg.old_slug:msg.clip.slug;
+      const existing=state.clips.find(c=>c.slug===old || c.slug===msg.clip.slug || Boolean(c.library_id && c.library_id===msg.clip.library_id));
+      const clips=existing ? state.clips.map(c=>c===existing?{...c,...msg.clip}:c).filter((c,i,all)=>all.findIndex(other=>other.slug===c.slug)===i)
+        : [...state.clips,msg.clip].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at));
+      return {...state,clips,recentNew:msg.type==='clip_renamed'?state.recentNew.filter(slug=>slug!==old&&slug!==msg.clip.slug):state.recentNew,
+        selectedMedia:state.selectedMedia.map(id=>id===`clip:${old}`?libraryKey({kind:'clip',item:msg.clip}):id)};
+    }
+    case 'image_updated':
+    case 'image_renamed': {
+      const old='old_slug' in msg?msg.old_slug:msg.image.slug;
+      const existing=state.images.find(image=>image.slug===old || image.slug===msg.image.slug || Boolean(image.library_id && image.library_id===msg.image.library_id));
+      const images=existing ? state.images.map(image=>image===existing?{...image,...msg.image}:image)
+        : [...state.images,msg.image].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at));
+      return {...state,images,selectedMedia:state.selectedMedia.map(id=>id===`image:${old}`?libraryKey({kind:'image',item:msg.image}):id)};
+    }
     case 'clip_saved': {
-      const existing = state.clips.some(c => c.slug === msg.clip.slug);
+      const existing = state.clips.some(c => c.slug === msg.clip.slug && (!c.library_id || !msg.clip.library_id || c.library_id===msg.clip.library_id));
       const clips = existing
         ? state.clips.map(c => (c.slug === msg.clip.slug ? {...c, ...msg.clip} : c))
-        : [msg.clip, ...state.clips];
+        : [msg.clip, ...state.clips.filter(c=>c.slug!==msg.clip.slug)].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at));
       const next = {
         ...state,
         clips,
@@ -341,13 +387,14 @@ function reduceWs(state: State, msg: WsMessage): State {
         ...state,
         clips: state.clips.filter(c => c.slug !== msg.slug),
         recentNew: state.recentNew.filter(s => s !== msg.slug),
+        selectedMedia:state.selectedMedia.filter(id=>!state.clips.some(clip=>clip.slug===msg.slug && libraryKey({kind:'clip',item:clip})===id)),
       };
 
     case 'image_saved': {
-      const existing = state.images.some(i => i.slug === msg.image.slug);
+      const existing = state.images.some(i => i.slug === msg.image.slug && (!i.library_id || !msg.image.library_id || i.library_id===msg.image.library_id));
       const images = existing
         ? state.images.map(i => (i.slug === msg.image.slug ? {...i, ...msg.image} : i))
-        : [msg.image, ...state.images];
+        : [msg.image, ...state.images.filter(image=>image.slug!==msg.image.slug)].sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at));
       const next = {...state, images};
       // An annotation or a rename updates a picture already on screen. Only a
       // genuinely new one is worth taking the island over.
@@ -363,7 +410,7 @@ function reduceWs(state: State, msg: WsMessage): State {
     }
 
     case 'image_deleted':
-      return {...state, images: state.images.filter(i => i.slug !== msg.slug)};
+      return {...state, images: state.images.filter(i => i.slug !== msg.slug),selectedMedia:state.selectedMedia.filter(id=>!state.images.some(image=>image.slug===msg.slug&&libraryKey({kind:'image',item:image})===id))};
 
     case 'image_error':
       return withEvent(state, {
@@ -651,11 +698,11 @@ export function StoreProvider({children}: {children: ReactNode}) {
     refreshTrashRef.current = syncTrash;
     const disconnect = connectWs(msg => {
       if (cancelled) return;
-      if (['clip_saved','clip_deleted','image_saved','image_deleted','playlists_changed'].includes(msg.type)) libraryEvents.current += 1;
+      if (['clip_saved','clip_updated','clip_renamed','clip_deleted','image_saved','image_updated','image_renamed','image_deleted','playlists_changed'].includes(msg.type)) libraryEvents.current += 1;
       if (msg.type === 'trash_changed') trashRequest += 1;
       if (msg.type === 'games_changed') gamesRequest += 1;
       if (msg.type === 'jobs_changed') jobsRequest += 1;
-      if (msg.type === 'image_saved' || msg.type === 'image_deleted') imageEvents.current += 1;
+      if (['image_saved','image_updated','image_renamed','image_deleted'].includes(msg.type)) imageEvents.current += 1;
       if (['status', 'tunnel_url', 'tunnel_error', 'session_start', 'session_stop'].includes(msg.type)) {
         statusEvents += 1;
       }
@@ -795,7 +842,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
     }
     if (query) {
       list = list.filter(
-        c => c.name.toLowerCase().includes(query) || (c.game ?? '').toLowerCase().includes(query),
+        c => clipTitle(c).toLowerCase().includes(query) || c.name.toLowerCase().includes(query) || (c.game ?? '').toLowerCase().includes(query),
       );
     }
     return list;
@@ -816,7 +863,7 @@ export function StoreProvider({children}: {children: ReactNode}) {
     }
     if (query) {
       list = list.filter(
-        i => i.name.toLowerCase().includes(query) || (i.game ?? '').toLowerCase().includes(query),
+        i => imageTitle(i).toLowerCase().includes(query) || i.name.toLowerCase().includes(query) || (i.game ?? '').toLowerCase().includes(query),
       );
     }
     return list;

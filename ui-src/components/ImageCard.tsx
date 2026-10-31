@@ -1,9 +1,13 @@
-import {useState} from 'react';
+import type {CardSelection} from '../lib/gallerySelection';
+import {MediaJobBadge} from './MediaJobBadge';
+import type {ProcessingJob} from '../lib/types';
+import {useState,useRef} from 'react';
 
 import {endClipDrag, startImageDrag} from '../lib/clipDrag';
 import {formatBytes} from '../lib/format';
 import {imageTitle, type Image} from '../lib/types';
 import {t} from '../lib/i18n';
+import {usePlaybackShortcuts} from '../lib/playbackShortcuts';
 import {InlineRename} from './InlineRename';
 import {IconImages} from './Icons';
 
@@ -12,6 +16,7 @@ export interface ImageActionSet {
   onCopy?: (image: Image) => void;
   onReveal?: (image: Image) => void;
   onDelete?: (image: Image) => void;
+  onBeginRename?: (image:Image) => void;
   onRename?: (image: Image, name: string) => Promise<void>;
   onContextMenu?: (image: Image, at: {x: number; y: number}) => void;
   /** Set by the context menu to open this card's rename field. */
@@ -27,13 +32,19 @@ export function ImageCard({
   image,
   isNew,
   actions = {},
-  draggable,
+  draggable, selection, job, onJob,
 }: {
   image: Image;
   isNew?: boolean;
   actions?: ImageActionSet;
   draggable?: boolean;
+  selection?:CardSelection; job?:ProcessingJob; onJob?:()=>void;
 }) {
+  const cardRef=useRef<HTMLElement>(null);
+  usePlaybackShortcuts(Boolean(actions.onRename),cardRef,0,event=>{
+    if(event.key!=='F2' || event.ctrlKey || event.altKey || event.metaKey || !cardRef.current?.contains(document.activeElement))return false;
+    if(!event.repeat)setRenamingHere(true);return true;
+  });
   const [renamingHere, setRenamingHere] = useState(false);
   const [failedThumb, setFailedThumb] = useState<string | null>(null);
   const renaming = renamingHere || actions.renamingSlug === image.slug;
@@ -60,11 +71,20 @@ export function ImageCard({
 
   return (
     <article
+      ref={cardRef} tabIndex={0}
       className="clip-card image-card"
       data-renaming={renaming || undefined}
-      draggable={draggable && !renaming}
-      onDragStart={e => startImageDrag(e, image)}
+      draggable={draggable && !renaming && !selection?.active}
+      onDragStart={e => {if(e.ctrlKey||e.metaKey||e.shiftKey||selection?.active)e.preventDefault();else startImageDrag(e, image);}}
       onDragEnd={endClipDrag}
+      data-media-id={image.library_id}
+      data-selected={selection?.selected||undefined}
+      onClickCapture={event=>{
+        const target=event.target as HTMLElement;
+        if(!selection || target.closest('.clip-name,.clip-rename,.media-select,.media-job,.clip-actions'))return;
+        if(selection.active||event.ctrlKey||event.metaKey||event.shiftKey){event.preventDefault();event.stopPropagation();
+          cardRef.current?.focus();selection.onSelect(event);}
+      }}
       onContextMenu={e => {
         if (!actions.onContextMenu) return;
         e.preventDefault();
@@ -92,6 +112,10 @@ export function ImageCard({
         </span>
       </button>
 
+      {selection?.active?<input className="media-select" type="checkbox" checked={selection.selected}
+        aria-label={t('library.selectItem',{name:imageTitle(image)})}
+        onChange={()=>{}} onClick={event=>{event.stopPropagation();selection.onSelect(event);}}/>:null}
+      <MediaJobBadge job={job} onOpen={()=>onJob?.()}/>
       <div className="clip-body">
         {renaming ? (
           <InlineRename
@@ -108,7 +132,10 @@ export function ImageCard({
           <h3
             className="clip-name"
             title={t('card.renameHint', {name: imageTitle(image)})}
-            onDoubleClick={() => actions.onRename && setRenamingHere(true)}>
+            role={actions.onRename?'button':undefined} tabIndex={actions.onRename?0:undefined}
+            onMouseDown={event=>event.preventDefault()} onPointerDown={event=>event.stopPropagation()} onDragStart={event=>event.preventDefault()}
+            onClick={event=>{event.stopPropagation();if(actions.onRename)setRenamingHere(true);}}
+            onKeyDown={event=>{if(actions.onRename && ['Enter',' '].includes(event.key)){event.preventDefault();event.stopPropagation();setRenamingHere(true);}}}>
             {imageTitle(image)}
           </h3>
         )}

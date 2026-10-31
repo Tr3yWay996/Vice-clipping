@@ -1,3 +1,4 @@
+import {MediaGallery} from '../components/MediaGallery';
 import {useState} from 'react';
 
 import {useStore} from '../state/store';
@@ -5,8 +6,6 @@ import {useClipActions} from '../state/clipActions';
 import {useImageActions} from '../state/imageActions';
 import {api} from '../lib/api';
 import {t} from '../lib/i18n';
-import {ClipCard} from '../components/ClipCard';
-import {ImageCard} from '../components/ImageCard';
 import {ContextMenu} from '../components/ContextMenu';
 import {PlaylistModal, type PlaylistDraft} from '../components/PlaylistModal';
 import {Modal} from '../components/Modal';
@@ -15,7 +14,7 @@ import {IconMore, IconWarning} from '../components/Icons';
 export function Clips() {
   const {state, dispatch, visibleClips, visibleImages, hotkey, notify, refreshPlaylists} =
     useStore();
-  const {playlists, currentPlaylistId, searchQuery, recentNew, status, config} = state;
+  const {playlists, currentPlaylistId, searchQuery, status, config} = state;
 
   const playlist = currentPlaylistId
     ? (playlists.find(p => p.id === currentPlaylistId) ?? null)
@@ -123,30 +122,7 @@ export function Clips() {
         </p>
       ) : null}
 
-      {count > 0 ? (
-        <div className="clip-grid">
-          {visibleClips.map(clip => (
-            <ClipCard
-              key={clip.slug}
-              clip={clip}
-              draggable
-              isNew={recentNew.includes(clip.slug)}
-              actions={actions}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      {images.length > 0 ? (
-        <>
-          <h2 className="clips-section">{t('clips.imagesHeading', {count: images.length})}</h2>
-          <div className="clip-grid">
-            {images.map(image => (
-              <ImageCard key={image.slug} image={image} draggable actions={imageActions} />
-            ))}
-          </div>
-        </>
-      ) : null}
+      {!empty?<MediaGallery clips={visibleClips} images={images} clipActions={actions} imageActions={imageActions}/>:null}
 
       {playlistMenu && playlist ? (
         <ContextMenu

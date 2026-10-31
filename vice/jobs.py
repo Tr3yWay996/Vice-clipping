@@ -98,13 +98,13 @@ class ProcessingQueue:
         if not self.stopping and (self.worker is None or self.worker.done()):
             self.worker = asyncio.create_task(self._work())
 
-    async def submit(self, operation, source_name, payload, *, output_path=None, source_revision=None, duration=None):
+    async def submit(self, operation, source_name, payload, *, output_path=None, source_revision=None, duration=None, source_media_ids=None, mode=None):
         if self.stopping:
             raise ValueError('Processing queue is stopping')
         if output_path and any(j.get('output_path') == str(output_path) and j['status'] not in TERMINAL for j in self.jobs):
             raise ValueError('That output already belongs to a queued job')
         job = dict(id=uuid.uuid4().hex, operation=operation, name=source_name,
-                   source_revision=source_revision, output_path=str(output_path) if output_path else None,
+                   source_revision=source_revision, source_media_ids=list(source_media_ids or []), mode=mode, output_path=str(output_path) if output_path else None,
                    created_at=now(), started_at=None, finished_at=None, duration=duration,
                    progress=None, elapsed=0, remaining=None, speed=None, stage='queued',
                    status='queued', error=None, result_path=None, can_pause=False,
@@ -184,7 +184,8 @@ class ProcessingQueue:
             self.jobs.remove(job)
         elif action == 'retry' and state in {'failed','interrupted','cancelled'}:
             return await self.submit(job['operation'], job['name'], job['payload'], output_path=job.get('output_path'),
-                                     source_revision=job.get('source_revision'), duration=job.get('duration'))
+                                     source_revision=job.get('source_revision'), duration=job.get('duration'),
+                                     source_media_ids=job.get('source_media_ids'), mode=job.get('mode'))
         elif action == 'pause' and state == 'queued':
             job['status'] = 'paused'
         elif action == 'pause' and state == 'processing' and self.process.pause():

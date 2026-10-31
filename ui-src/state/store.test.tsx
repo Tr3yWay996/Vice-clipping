@@ -356,3 +356,36 @@ describe('trash snapshots and library recovery',()=>{
     await flush(()=>lifecycle.onOpen?.());expect(store.state.clips).toHaveLength(0);expect(store.state.trash?.items).toHaveLength(1);
   });
 });
+
+describe('semantic media updates and stable gallery selection',()=>{
+ const media=(slug:string,id=slug):Clip=>({slug,library_id:id,display_title:slug,name:slug+'.mp4',created_at:'2020-01-02T00:00:00Z',video_url:'/media/'+id,duration:10,game:null} as Clip);
+ it('updates and renames in place without new badges or island notifications',async()=>{
+  vi.mocked(api.clips).mockResolvedValue([media('newer','a'),media('older','b')]);await mount();
+  await flush(()=>store.dispatch({type:'selectMedia',id:'b',visible:['a','b']}));
+  const before=store.state.event;
+  await emit({type:'clip_renamed',old_slug:'older',clip:{...media('Exact name!?','b'),created_at:'2020-01-02T00:00:00Z'}});
+  expect(store.state.clips.map(c=>c.slug)).toEqual(['newer','Exact name!?']);expect(store.state.recentNew).toEqual([]);expect(store.state.event).toBe(before);expect(store.state.selectedMedia).toEqual(['b']);
+  await emit({type:'clip_updated',clip:{...media('Exact name!?','b'),game:'Rocket League'}});
+  expect(store.state.recentNew).toEqual([]);expect(store.state.clips[1].game).toBe('Rocket League');
+ });
+ it('treats restored or missed updated media as existing and genuine copies as new',async()=>{
+  await mount();await emit({type:'clip_updated',clip:media('restored')});expect(store.state.recentNew).toEqual([]);
+  await emit({type:'clip_saved',clip:media('copy')});expect(store.state.recentNew).toContain('copy');
+  await emit({type:'clip_renamed',old_slug:'copy',clip:media('Copied title','copy')});expect(store.state.recentNew).not.toContain('copy');expect(store.state.recentNew).not.toContain('Copied title');
+ });
+ it('handles a new recording reusing a known filename without duplicate cards',async()=>{
+  vi.mocked(api.clips).mockResolvedValue([media('reused','old')]);await mount();await emit({type:'clip_saved',clip:media('reused','brand-new')});
+  expect(store.state.clips).toHaveLength(1);expect(store.state.clips[0].library_id).toBe('brand-new');expect(store.state.recentNew).toEqual(['reused']);
+ });
+ it('uses range ordering from the current filtered gallery and retains selection across views and renames',async()=>{
+  vi.mocked(api.clips).mockResolvedValue(['a','b','c','d'].map(slug=>media(slug)));await mount();
+  await flush(()=>store.dispatch({type:'selectMedia',id:'b',visible:['a','b','c','d'],toggle:true}));
+  await flush(()=>store.dispatch({type:'selectMedia',id:'d',visible:['a','b','c','d'],range:true}));expect(store.state.selectedMedia).toEqual(['b','c','d']);
+  await flush(()=>store.dispatch({type:'selectMedia',id:'c',visible:['a','b','c','d'],toggle:true}));expect(store.state.selectedMedia).toEqual(['b','d']);
+  await flush(()=>store.dispatch({type:'setSearch',query:'b'}));await flush(()=>store.dispatch({type:'setView',view:'clips',playlistId:null}));
+  expect(store.state.selectedMedia).toEqual(['b','d']);await flush(()=>store.dispatch({type:'selectAllMedia',ids:['b']}));expect(store.state.selectedMedia).toEqual(['b','d']);
+  await emit({type:'clip_renamed',old_slug:'b',clip:media('A new title','b')});expect(store.state.selectedMedia).toEqual(['b','d']);
+  await emit({type:'clip_deleted',slug:'d'});expect(store.state.selectedMedia).toEqual(['b']);
+  await flush(()=>store.dispatch({type:'clearSelection'}));expect(store.state.selectionMode).toBe(false);expect(store.state.selectedMedia).toEqual([]);
+ });
+});

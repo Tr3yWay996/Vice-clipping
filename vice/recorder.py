@@ -1917,7 +1917,7 @@ _SLUG_KEEP = re.compile(r"[^\w.\-]", re.UNICODE)
 
 
 def slugify_clip_name(name: str) -> Optional[str]:
-    """Turn a user-typed clip name into a filename stem.
+    """Legacy/generated-name sanitization; manual media titles use library.py.
 
     Whitespace runs become a single dash and unsupported punctuation is
     dropped; casing is left alone. Returns None when nothing usable is left.

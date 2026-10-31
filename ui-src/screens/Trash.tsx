@@ -57,10 +57,10 @@ export function Trash() {
         <div className="clip-thumb trash-thumb">
           <span className="clip-thumb-empty" aria-hidden="true"><IconTrash size={28}/></span>
           {item.thumbnail_url?<img src={item.thumbnail_url} loading="lazy" alt="" onError={event=>event.currentTarget.hidden=true}/>:null}
-          <label className="trash-select"><input type="checkbox" aria-label={t('trash.selectItem',{name:item.name})} checked={selected.has(item.id)} disabled={busy} onChange={()=>toggle(item.id)}/></label>
+          <label className="trash-select"><input type="checkbox" aria-label={t('trash.selectItem',{name:item.display_title??item.name})} checked={selected.has(item.id)} disabled={busy} onChange={()=>toggle(item.id)}/></label>
         </div>
         <div className="clip-body">
-          <h2 className="clip-name" title={item.name}>{item.name}</h2>
+          <h2 className="clip-name" title={item.name}>{item.display_title??item.name}</h2>
           <span className="clip-game">{item.game || t('common.untagged')}</span>
           <p className="clip-meta">{t(`trash.kind.${item.kind}`)} · {formatBytes(item.size)}</p>
           <p className="clip-meta">{t('trash.recorded',{date:date(item.created_at)})}</p>
