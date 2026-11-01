@@ -1214,4 +1214,76 @@
       "prepare": "Preparar compartilhamento"
     }
   }
+,
+  "audioMixer": {
+    "manage": "Gerenciar esta fonte",
+  "title": "Mixer de áudio",
+  "help": "Escolha uma vez a fonte automática do jogo ou adicione faixas persistentes por aplicativo e dispositivo. Medidores dos aplicativos mostram prévias isoladas; os das faixas mostram o monitor de captura configurado.",
+  "auto": "Áudio do jogo gravado · Automático",
+  "autoHelp": "Segue o jogo gravado mesmo ao alternar janelas. Nunca substitui pela saída da área de trabalho.",
+  "unavailable": "A captura inteligente requer GPU Screen Recorder, PipeWire, WirePlumber 0.5+, pw-dump, pw-cli, pw-link e pactl. Selecione explicitamente a saída do desktop ou uma entrada se quiser outra fonte.",
+  "search": "Buscar fontes de áudio",
+  "filterLabel": "Categoria da fonte",
+  "filter": {
+    "all": "Todas as fontes",
+    "applications": "Aplicativos",
+    "devices": "Entradas e saídas"
+  },
+  "noMeter": "Medidor indisponível",
+  "unknownOutput": "Saída não informada",
+  "running": "Ativo",
+  "inactive": "Inativo",
+  "onTracks": "Configurado na(s) faixa(s) {tracks}",
+  "input": "Microfone / dispositivo de entrada",
+  "output": "Saída do sistema / dispositivo virtual",
+  "newSource": "Áudio de aplicativo",
+  "createRule": "Criar regra de aplicativo",
+  "saveHelp": "Salve para aplicar as alterações. Adicionar ou remover faixas muda o formato e reinicia o buffer; regras inteligentes, nomes, ativação e níveis não o reiniciam.",
+  "track": "Faixa {number}",
+  "enabled": "Ativada",
+  "name": "Nome da faixa",
+  "captureConnected": "Gravador conectado a este monitor de captura",
+  "ambiguous": "Esta fonte corresponde a aplicativos diferentes. Refine as regras se isso não for intencional.",
+  "ruleError": "A regra é inválida ou excedeu seu limite de tempo.",
+  "fieldLabel": "Campo de correspondência",
+  "field": {
+    "executable": "Nome do executável",
+    "executable_path": "Caminho do executável",
+    "name": "Nome do aplicativo",
+    "application_id": "Identificador do aplicativo",
+    "node_name": "Nome do nó PipeWire"
+  },
+  "modeLabel": "Modo de correspondência",
+  "mode": {
+    "exact": "Exata (ignora maiúsculas)",
+    "contains": "Contém (ignora maiúsculas)",
+    "regex": "Expressão regular"
+  },
+  "pattern": "Texto de busca",
+  "addRule": "Adicionar regra",
+  "rulesHelp": "As regras são alternativas: qualquer regra correspondente inclui o fluxo e todas as instâncias.",
+  "gameRulesHelp": "Deixe as regras vazias para identificar o jogo automaticamente. Regras explícitas substituem a identificação automática nesta faixa.",
+  "matches": "Correspondências atuais: {names}",
+  "none": "Nenhuma",
+  "legacyHelp": "Esta fonte GSR direta já existia. Alterar sua ativação a converte em fonte gerenciada na mesma posição de faixa.",
+  "test": "Testar captura de áudio",
+  "testing": "Gravando amostra de 3 segundos…",
+  "testHelp": "Testa as configurações salvas sem parar nem esvaziar o buffer. Ouça as amostras abaixo; o aplicativo pode ter ficado em silêncio.",
+  "clearTest": "Excluir amostras",
+  "warning": "Verifique o áudio da gravação",
+  "overlap": "O áudio está configurado em várias faixas separadas. Verifique duplicatas não intencionais.",
+  "state": {
+    "disabled": "Desativada",
+    "unsupported": "Captura não suportada",
+    "disconnected": "Caminho de captura desconectado",
+    "missing_game": "Aguardando jogo gravado",
+    "missing_stream": "Nenhum fluxo correspondente",
+    "meter_unavailable": "Medidor de captura indisponível",
+    "quiet": "Conectada, mas em silêncio há mais de 30 segundos; verifique volume e mudo",
+    "muted": "Fonte silenciada ou nível zero",
+    "active": "Áudio detectado",
+    "connected": "Conectada; aguardando som",
+    "captured": "Som capturado na amostra"
+  }
+}
 }

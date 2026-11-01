@@ -42,3 +42,19 @@ jobs:
 
       - name: Run tests
         run: python -m unittest discover -s tests
+
+  native-audio:
+    runs-on: ubuntu-latest
+    container: debian:trixie-slim
+    steps:
+      - name: Install isolated audio test runtime
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git ca-certificates python3-venv pipewire pipewire-pulse wireplumber pulseaudio-utils libpulse0 ffmpeg dbus-daemon
+      - uses: actions/checkout@v4
+      - name: Test real PCM routing without a desktop or GPU
+        run: |
+          python3 -m venv /tmp/vice-audio-venv
+          /tmp/vice-audio-venv/bin/pip install tomli-w psutil
+          useradd --create-home vice-audio-test
+          runuser -u vice-audio-test -- /tmp/vice-audio-venv/bin/python tools/test-smart-audio.py

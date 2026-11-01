@@ -1,3 +1,4 @@
+import {AudioMixer} from '../components/settings/AudioMixer';
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 
 import {api} from '../lib/api';
@@ -710,6 +711,8 @@ export function Settings() {
             stack
             help={t('settings.audioTracksHelp')}>
             <AudioTracks
+              picker={<AudioMixer draft={draft} update={update} sources={sources.sources} active={section==='audio'} onRefresh={loadSources}/>}
+              smartSources={draft.audioSources}
               tracks={draft.audioTracks}
               sources={sources.sources}
               mixFirst={draft.mixFirstTrack}
@@ -724,7 +727,7 @@ export function Settings() {
               micTrack={
                 draft.captureMic &&
                 !draft.audioTracks.some(track =>
-                  track.split('|').includes(draft.micSource || 'default_input'),
+                  track.split('|').some(part=>(draft.audioSources[part]?.device??part)===(draft.micSource || 'default_input')),
                 )
                   ? {value: draft.micVolume, onChange: micVolume => update({micVolume})}
                   : null

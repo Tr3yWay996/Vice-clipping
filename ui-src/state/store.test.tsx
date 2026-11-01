@@ -389,3 +389,12 @@ describe('semantic media updates and stable gallery selection',()=>{
   await flush(()=>store.dispatch({type:'clearSelection'}));expect(store.state.selectionMode).toBe(false);expect(store.state.selectedMedia).toEqual([]);
  });
 });
+
+
+describe('smart capture state',()=>{
+ it('receives live stereo diagnostics over the existing socket without replacing playback or gallery state',async()=>{
+  await mount();const clips=store.state.clips;
+  const audio={supported:true,backend_supported:true,error:null,recording:true,tracks:[],applications:[]};
+  await emit({type:'audio_state',audio});expect(store.state.status.audio).toEqual(audio);expect(store.state.clips).toBe(clips);
+ });
+});

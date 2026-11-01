@@ -944,3 +944,22 @@ select option {
 .game-assign-list { max-height: 45vh; overflow: auto; display: grid; gap: 8px; }
 .game-assign-list label { display: flex; align-items: center; gap: 8px; padding: 6px; overflow-wrap: anywhere; }
 .game-assign-list small { display: block; color: var(--color-text-secondary); }
+
+.audio-mixer { display: grid; gap: 12px; min-width: 0; width: 100%; }
+.audio-source-row { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--radius-inner); background: var(--color-overlay-hover); }
+.audio-source-row > div:first-of-type { min-width: 0; flex: 1; }
+.audio-source-row small, .audio-source-editor small { display: block; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.audio-app-icon { width: 28px; height: 28px; object-fit: contain; }
+.audio-meter { display: grid; gap: 2px; width: 110px; flex-shrink: 0; }
+.audio-meter meter { width: 100%; height: 8px; accent-color: var(--color-accent); }
+.audio-meter small { font-size: 11px; }
+.audio-source-editor { padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-inner); }
+.audio-source-editor > :not(summary) { margin-top: 8px; }
+.audio-rule { display: flex; flex-wrap: wrap; gap: 8px; }
+.audio-rule .text-input { min-width: 120px; flex: 1; }
+.audio-test-results audio { display: block; max-width: 100%; }
+@media (max-width: 760px) { .audio-source-row { flex-wrap: wrap; } .audio-source-row > div:first-of-type { flex-basis: 65%; } }
+.audio-source-editor > label { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.audio-meter meter::-webkit-meter-bar { background: var(--color-overlay-hover); border: 0; border-radius: 3px; }
+.audio-meter meter::-webkit-meter-optimum-value { background: var(--color-accent); border-radius: 3px; }
+.audio-meter meter::-moz-meter-bar { background: var(--color-accent); border-radius: 3px; }

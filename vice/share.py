@@ -63,7 +63,7 @@ from .runtime import actual_home_dir, load_user_systemd_env, resolve_path
 log = logging.getLogger("vice.share")
 
 # Config maps whose keys are user data rather than field names.
-FREE_MAP_KEYS = frozenset({"audio_track_volumes"})
+FREE_MAP_KEYS = frozenset({"audio_track_volumes", "audio_sources"})
 UI_VERSION_TOKEN = "__VICE_VERSION__"
 
 
@@ -1059,13 +1059,15 @@ def _quick_tunnel_url(line: str) -> Optional[str]:
 from .games import display_name
 from .game_api import GameLibraryAPI
 from .library_api import LibraryAPI
+from .audio_api import AudioAPI
 from .trash_api import TrashAPI
 
 
-class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
+class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
     def __init__(self, cfg, games=None) -> None:
         from .games import GameLibrary
         self.cfg = cfg
+        self.audio_router = None
         self.games = games if games is not None else GameLibrary()
         self._games_loop = None
         self._games_dirty = False
@@ -1206,6 +1208,13 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
         r.add_get("/api/config",               self._api_get_config)
         r.add_get("/api/displays",             self._api_get_displays)
         r.add_get("/api/audio-sources",        self._api_get_audio_sources)
+        r.add_get('/api/audio/state',self._api_audio_state)
+        r.add_post('/api/audio/match-preview',self._api_audio_match)
+        r.add_get('/api/audio/icons/{node}',self._api_audio_icon)
+        r.add_post('/api/audio/monitor',self._api_audio_monitor)
+        r.add_post('/api/audio/test',self._api_audio_test)
+        r.add_get('/api/audio/tests/{test}/{index}',self._api_audio_sample)
+        r.add_delete('/api/audio/tests/{test}',self._api_audio_test_delete)
         r.add_post("/api/config",              self._api_set_config)
         r.add_get('/api/trash', self._api_trash_list)
         r.add_post('/api/trash/actions', self._api_trash_action)
@@ -2930,7 +2939,50 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
         return web.json_response(payload)
 
     async def _api_get_audio_sources(self, _: web.Request) -> web.Response:
-        payload = await asyncio.to_thread(list_gsr_audio_sources)
+        from .audio_streams import inspect_streams
+
+        payload, applications = await asyncio.gather(
+            asyncio.to_thread(list_gsr_audio_sources),
+            asyncio.to_thread(inspect_streams),
+        )
+        payload.update(applications)
+        # Engine names such as FMOD are not recognizable game identities.
+        # Preserve GSR's exact source id, but expose the executable alongside it.
+        for source in payload.get("sources", []):
+            if not source["id"].startswith("app:"):
+                continue
+            name = source["id"][4:].casefold()
+            binaries = sorted(
+                {
+                    stream["executable"]
+                    for stream in payload["applications"]
+                    if stream["name"].casefold() == name and stream["executable"]
+                }
+            )
+            if binaries:
+                source["label"] += " · " + ", ".join(binaries)
+        payload["sources"] = [
+            source
+            for source in payload["sources"]
+            if not source["id"].startswith("device:vice_capture_")
+        ]
+        payload["sources"].insert(
+            0,
+            {
+                "id": "auto:game",
+                "label": "Recorded Game Audio · Automatic",
+                "kind": "automatic",
+            },
+        )
+        for source, settings in self.cfg.recording.audio_sources.items():
+            if source.startswith("rule:"):
+                payload["sources"].append(
+                    {
+                        "id": source,
+                        "label": settings.get("name") or source,
+                        "kind": "application",
+                    }
+                )
         payload["selected"] = self.cfg.recording.gsr_audio_source
         return web.json_response(payload)
 
@@ -2997,6 +3049,9 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI):
             hotkeys_raw.get("disable_while_focused")
         )
 
+        from .audio_router import validate_sources
+        try:validate_sources(merged['recording'].get('audio_sources',{}))
+        except ValueError as exc:return web.json_response({'ok':False,'error':str(exc)},status=400)
         new_cfg = Config(
             recording=RecordingConfig(**{
                 k: v for k, v in merged["recording"].items()

@@ -1282,4 +1282,76 @@
       "prepare": "Freigabe vorbereiten"
     }
   }
+,
+  "audioMixer": {
+    "manage": "Diese Quelle verwalten",
+  "title": "Audiomixer",
+  "help": "Wähle einmal die automatische Spielquelle oder füge dauerhafte Anwendungs- und Gerätespuren hinzu. Anwendungspegel zeigen isolierte Vorschauen, Spurpegel den konfigurierten Aufnahmemonitor.",
+  "auto": "Aufgenommenes Spielaudio · Automatisch",
+  "autoHelp": "Folgt dem aufgenommenen Spiel auch beim Wechsel zu anderen Fenstern. Ersetzt es niemals durch Desktop-Audio.",
+  "unavailable": "Intelligente Aufnahme benötigt GPU Screen Recorder, PipeWire, WirePlumber 0.5+, pw-dump, pw-cli, pw-link und pactl. Wähle bei Bedarf die Desktop-Ausgabe oder ein Eingabegerät ausdrücklich aus.",
+  "search": "Audioquellen suchen",
+  "filterLabel": "Quellenkategorie",
+  "filter": {
+    "all": "Alle Quellen",
+    "applications": "Anwendungen",
+    "devices": "Ein- und Ausgänge"
+  },
+  "noMeter": "Pegel nicht verfügbar",
+  "unknownOutput": "Ausgabe nicht gemeldet",
+  "running": "Aktiv",
+  "inactive": "Inaktiv",
+  "onTracks": "Auf Spur(en) {tracks} konfiguriert",
+  "input": "Mikrofon / Eingabegerät",
+  "output": "Desktop-Ausgabe / virtuelles Gerät",
+  "newSource": "Anwendungsaudio",
+  "createRule": "Anwendungsregel erstellen",
+  "saveHelp": "Zum Anwenden Einstellungen speichern. Hinzufügen oder Entfernen einer Spur ändert das Aufnahmeformat und startet den Puffer neu; intelligente Regeln, Namen, Aktivierung und Pegel ändern ihn nicht.",
+  "track": "Spur {number}",
+  "enabled": "Aktiviert",
+  "name": "Spurname",
+  "captureConnected": "Recorder mit diesem Aufnahmemonitor verbunden",
+  "ambiguous": "Diese Quelle passt zu mehreren unterschiedlichen Anwendungen. Regeln bei Bedarf genauer festlegen.",
+  "ruleError": "Die Regel ist ungültig oder überschreitet ihr Zeitlimit.",
+  "fieldLabel": "Abgleichsfeld",
+  "field": {
+    "executable": "Programmname",
+    "executable_path": "Programmpfad",
+    "name": "Anwendungsname",
+    "application_id": "Anwendungskennung",
+    "node_name": "PipeWire-Knotenname"
+  },
+  "modeLabel": "Abgleichsmodus",
+  "mode": {
+    "exact": "Exakt (ohne Groß-/Kleinschreibung)",
+    "contains": "Enthält (ohne Groß-/Kleinschreibung)",
+    "regex": "Regulärer Ausdruck"
+  },
+  "pattern": "Suchtext",
+  "addRule": "Weitere Regel",
+  "rulesHelp": "Regeln sind Alternativen: Jede passende Regel schließt den Stream ein, einschließlich aller Instanzen.",
+  "gameRulesHelp": "Für automatische Spielerkennung Regeln leer lassen. Explizite Regeln ersetzen den automatischen Abgleich dieser Spur.",
+  "matches": "Aktuelle Treffer: {names}",
+  "none": "Keine",
+  "legacyHelp": "Diese direkte GSR-Quelle war bereits vorhanden. Eine Änderung der Aktivierung wandelt sie an derselben Spurposition in eine verwaltete Quelle um.",
+  "test": "Audioaufnahme testen",
+  "testing": "3-Sekunden-Probe wird aufgenommen…",
+  "testHelp": "Prüft gespeicherte Einstellungen, ohne den Puffer zu stoppen oder zu leeren. Proben unten anhören; die Anwendung kann auch still gewesen sein.",
+  "clearTest": "Testproben löschen",
+  "warning": "Aufnahmeaudio überprüfen",
+  "overlap": "Audio ist auf mehreren getrennten Spuren konfiguriert. Auf ungewollte Duplikate prüfen.",
+  "state": {
+    "disabled": "Deaktiviert",
+    "unsupported": "Aufnahme nicht unterstützt",
+    "disconnected": "Aufnahmepfad getrennt",
+    "missing_game": "Warte auf aufgenommenes Spiel",
+    "missing_stream": "Kein passender Wiedergabestream",
+    "meter_unavailable": "Aufnahmepegel nicht verfügbar",
+    "quiet": "Verbunden, aber seit über 30 Sekunden still; Stummschaltung/Pegel prüfen",
+    "muted": "Quelle stumm oder Aufnahmepegel null",
+    "active": "Audio erkannt",
+    "connected": "Verbunden; warte auf Ton",
+    "captured": "Ton in Probe aufgenommen"
+  }
+}
 }

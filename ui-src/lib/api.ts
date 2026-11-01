@@ -192,6 +192,11 @@ export const api = {
     request<{backend: string; displays: unknown[]; warning: string | null}>(
       `/api/displays${backend ? `?backend=${encodeURIComponent(backend)}` : ''}`,
     ),
+  audioMatch: (rules:import('./types').AudioMatchRule[]) => post<{matches:number[][]}>('/api/audio/match-preview',{rules}),
+  audioState: () => request<import('./types').SmartAudioState>('/api/audio/state'),
+  monitorAudio: (token:string,enabled:boolean) => post('/api/audio/monitor',{token,enabled}),
+  testAudio: () => post<import('./types').AudioTestResult>('/api/audio/test',{}),
+  deleteAudioTest: (id:string) => request(`/api/audio/tests/${enc(id)}`,{method:'DELETE'}),
   audioSources: () => request<{sources: unknown[]; warning: string | null}>('/api/audio-sources'),
 
   editorProject: () => request<unknown>('/api/editor/project'),

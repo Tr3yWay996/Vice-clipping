@@ -34,6 +34,10 @@ depends=(
     'wmctrl'
 )
 optdepends=(
+    'wireplumber>=0.5: private capture source isolation'
+    'pipewire: smart game audio routing'
+    'pipewire-pulse: private audio capture monitors'
+    'libpulse: audio meters and capture diagnostics'
     'wf-recorder: Wayland fallback recording backend'
     'kdotool: game detection on KDE Plasma Wayland'
     'python-gobject: keyboard overlay'

@@ -12,6 +12,9 @@
   xprop,
   wmctrl,
   cloudflared,
+  pipewire,
+  wireplumber,
+  pulseaudio,
   kdotool,
   withQtWebEngine ? true,
   extraRuntimePaths ? [ ],
@@ -28,6 +31,9 @@ let
     xprop
     wmctrl
     cloudflared
+    pipewire
+    wireplumber
+    pulseaudio
     kdotool
   ] ++ extraRuntimePaths;
 in
@@ -80,7 +86,8 @@ python3Packages.buildPythonApplication rec {
 
   postFixup = ''
     for bin in $out/bin/vice $out/bin/vice-app; do
-      wrapProgram $bin --prefix PATH : ${lib.makeBinPath runtimeDeps}
+      wrapProgram $bin --prefix PATH : ${lib.makeBinPath runtimeDeps} \
+        --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ pulseaudio ]}
     done
   '';
 
