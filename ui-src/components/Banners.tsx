@@ -1,9 +1,12 @@
+import {useState} from 'react';
+import type {AudioWarning, AudioWarningPreferences} from '../lib/types';
 import {useStore, type BannerId} from '../state/store';
 import {H264_SUPPORTED} from '../lib/env';
 import {IconClose, IconWarning} from './Icons';
 import {t} from '../lib/i18n';
 
-const GSR_FLATPAK_INSTALL = 'flatpak install flathub com.dec05eba.gpu_screen_recorder';
+const GSR_FLATPAK_INSTALL =
+  'flatpak install flathub com.dec05eba.gpu_screen_recorder';
 
 /**
  * The four states worth interrupting for. Wording is carried over from the
@@ -11,23 +14,91 @@ const GSR_FLATPAK_INSTALL = 'flatpak install flathub com.dec05eba.gpu_screen_rec
  * reporters to land on text that says what happened and what to do about it.
  */
 export function Banners() {
-  const {state, dispatch} = useStore();
+  const {state, dispatch, saveConfig} = useStore();
+  const [audioDismissed, setAudioDismissed] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(
+        sessionStorage.getItem('vice-audio-dismissed') || '[]',
+      );
+      return Array.isArray(saved)
+        ? saved.filter((id) => typeof id === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const dismissAudio = (id: string) => {
+    const next = [...audioDismissed, id].slice(-256);
+    setAudioDismissed(next);
+    try {
+      sessionStorage.setItem('vice-audio-dismissed', JSON.stringify(next));
+    } catch {}
+  };
+  const silenceAudio = (warning: AudioWarning, source: boolean) => {
+    const prefs = (state.config?.recording.audio_warning_preferences ??
+      {}) as Partial<AudioWarningPreferences>;
+    const key = source ? 'ignored_sources' : 'ignored_conditions';
+    void saveConfig({
+      recording: {
+        audio_warning_preferences: {
+          ...prefs,
+          [key]: [
+            ...(prefs[key] ?? []),
+            source ? warning.source : warning.source + '|' + warning.state,
+          ],
+        },
+      },
+    });
+    dismissAudio(warning.id);
+  };
   const {status, dismissed} = state;
 
   const showing = (id: BannerId) => !dismissed.includes(id);
-  const dismiss = (banner: BannerId) => () => dispatch({type: 'dismiss', banner});
+  const dismiss = (banner: BannerId) => () =>
+    dispatch({type: 'dismiss', banner});
 
-  const audioWarnings=status.audio?.tracks.filter(track=>track.enabled && ['missing_game','missing_stream','disconnected','unsupported','quiet','muted','meter_unavailable'].includes(track.state)) ?? [];
+  const audioWarnings = (status.audio?.warnings ?? []).filter(
+    (warning) => !audioDismissed.includes(warning.id),
+  );
   const recorderDown = status.ready === false && Boolean(status.recorder_error);
 
   return (
     <div className="banners">
       {/* Not dismissible: the daemon is up but nothing is being recorded, so
           the window exists mainly to say this and keep Settings reachable. */}
-      {audioWarnings.length ? <Banner tone="warning"><strong>{t('audioMixer.warning')}</strong>
-        <span>{audioWarnings.map(track=>`${track.name}: ${t(`audioMixer.state.${track.state}`)}`).join(' · ')}</span>
-        <button type="button" className="btn btn-quiet btn-sm" onClick={()=>dispatch({type:'setView',view:'settings'})}>{t('settings.secAudio')}</button>
-      </Banner>:null}
+      {audioWarnings.map((warning) => (
+        <Banner
+          key={warning.id}
+          tone={warning.kind==='critical'?'error':'warning'}
+          onDismiss={() => dismissAudio(warning.id)}
+        >
+          <strong>{t('audioMixer.warning')}</strong>
+          <span>
+            {warning.name}: {t(`audioMixer.state.${warning.state}`)}
+          </span>
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => dispatch({type: 'setView', view: 'settings'})}
+          >
+            {t('settings.secAudio')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => silenceAudio(warning, false)}
+          >
+            {t('audioWorkflow.silenceCondition')}
+          </button>
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            onClick={() => silenceAudio(warning, true)}
+          >
+            {t('audioWorkflow.silenceSource')}
+          </button>
+        </Banner>
+      ))}
       {recorderDown ? (
         <Banner tone="error">
           <strong>{t('banners.notRecording')}</strong>
@@ -49,7 +120,9 @@ export function Banners() {
                     ? ''
                     : status.cpu_fallback_reason.flatpak
                       ? t('banners.nvencUseFlatpak')
-                      : t('banners.nvencGetFlatpak', {command: GSR_FLATPAK_INSTALL})
+                      : t('banners.nvencGetFlatpak', {
+                          command: GSR_FLATPAK_INSTALL,
+                        })
                 }`
               : t('banners.cpuFallbackHelp')}
           </span>
@@ -67,9 +140,15 @@ export function Banners() {
         <Banner tone="warning" onDismiss={dismiss('codec-h264')}>
           <strong>{t('banners.cannotPlay')}</strong>
           <span>{t('banners.cannotPlayHelp')}</span>
-          <span className="banner-mono">sudo apt install python3-pyqt6.qtwebengine</span>
-          <span className="banner-mono">sudo dnf install python3-pyqt6-webengine</span>
-          <span className="banner-mono">sudo zypper install python3-qt6-webengine</span>
+          <span className="banner-mono">
+            sudo apt install python3-pyqt6.qtwebengine
+          </span>
+          <span className="banner-mono">
+            sudo dnf install python3-pyqt6-webengine
+          </span>
+          <span className="banner-mono">
+            sudo zypper install python3-qt6-webengine
+          </span>
         </Banner>
       ) : null}
     </div>
@@ -86,11 +165,20 @@ function Banner({
   children: React.ReactNode;
 }) {
   return (
-    <div className="banner" data-tone={tone} role={tone === 'error' ? 'alert' : 'status'}>
+    <div
+      className="banner"
+      data-tone={tone}
+      role={tone === 'error' ? 'alert' : 'status'}
+    >
       <IconWarning size={17} className="banner-icon" />
       <div className="banner-text">{children}</div>
       {onDismiss ? (
-        <button type="button" className="banner-close" onClick={onDismiss} aria-label={t('common.dismiss')}>
+        <button
+          type="button"
+          className="banner-close"
+          onClick={onDismiss}
+          aria-label={t('common.dismiss')}
+        >
           <IconClose size={14} />
         </button>
       ) : null}

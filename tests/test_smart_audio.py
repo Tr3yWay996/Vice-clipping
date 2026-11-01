@@ -620,7 +620,7 @@ class SmartRecordedMediaTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(
                 [item["tags"]["title"] for item in probe[1:]],
-                ["BeamNG game", "My microphone", "app:Discord"],
+                ["BeamNG game", "My microphone", "Discord"],
             )
 
 

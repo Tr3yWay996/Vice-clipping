@@ -41,7 +41,7 @@ import type {EdItem, EdProject, EdSnapshot, EdTab, EdTrack, EditorDeps} from './
 const ED_PPS_MIN = 4;
 const ED_PPS_MAX = 48;
 const ED_UNDO_CAP = 50;
-const ED_RAIL = 54;
+const ED_RAIL = 152;
 const ED_DRIFT = 0.15;
 /** Seconds before an item to start warming its video. */
 const ED_PRELOAD = 2.0;
@@ -111,6 +111,8 @@ export interface EditorEngine {
   fit: () => void;
   seek: (t: number) => void;
   setPlaying: (playing: boolean) => void;
+  beginInspectorEdit:()=>void;
+  endInspectorEdit:()=>void;
   setMonitoring: (volume: number, muted: boolean) => void;
   trimSelected: (boundary: Boundary) => void;
   split: () => void;
@@ -119,6 +121,11 @@ export interface EditorEngine {
   remove: () => void;
   addTrack: (type: 'video' | 'audio') => void;
   reset: () => void;
+  selectTrack:(id:string)=>void;
+  renameTrack:(id:string,label:string)=>void;
+  muteTrack:(id:string)=>void;
+  soloTrack:(id:string,multiple?:boolean)=>void;
+  setTrackVolume:(id:string,volume:number)=>void;
   select: (id: string | null) => void;
   inspectorChange: (field: string, value: string | number | boolean) => void;
   end: () => number;
@@ -128,14 +135,19 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   // ── state ───────────────────────────────────────────────────────
   let project: EdProject | null = null;
   let sel: string | null = null;
+  let selectedTrackId:string|null=null;
+  let selectedIds=new Set<string>();
+  const soloed=new Set<string>();
+  let closeMenu=()=>{};
   let playhead = 0;
   let playing = false;
   let playbackRate = 1;
   let monitorVolume = 1;
   let monitorMuted = false;
+  let inspectorEditing=false;
   let unbindKeyboard: (() => void) | undefined;
   let pps = 12;
-  let clipboard: EdItem | null = null;
+  let clipboard: EdItem[] | null = null;
   let missing = new Set<string>();
   let loaded = false;
   let dirty = false;
@@ -231,9 +243,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   // ── notification ────────────────────────────────────────────────
   function snapshot(): EdSnapshot {
     const it = selItem();
-    const canSplit = Boolean(
-      it && playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2,
-    );
+    const canSplit = Boolean(it && playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2);
     return {
       ready: Boolean(project),
       tab,
@@ -243,6 +253,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       duration: end(),
       pps,
       selected: it,
+      selectedTrack: project?.tracks.find((track) => track.id === selectedTrackId) ?? null,
       canSplit,
       canDetach: Boolean(it && it.kind === 'clip' && !it.muted && clipOf(it)?.audio_tracks?.length),
       canDuplicate: Boolean(it),
@@ -275,6 +286,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       console.debug('Loading the editor project failed', err);
       project = project || defaultProject();
     }
+    soloed.clear();
     loaded = true;
     emit();
   }
@@ -336,6 +348,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function afterRestore() {
+    for (const id of soloed) if (!project!.tracks.some((t) => t.id === id)) soloed.delete(id);
+    if (!project!.tracks.some((t) => t.id === selectedTrackId)) selectedTrackId = null;
+    selectedIds = new Set([...selectedIds].filter((id) => item(id)));
     if (sel && !item(sel)) sel = null;
     refreshMissing();
     scheduleSave();
@@ -354,6 +369,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function commit() {
+    if (sel && !selectedIds.has(sel)) selectedIds = new Set([sel]);
+    if (!sel) selectedIds.clear();
     pruneTransitions();
     scheduleSave();
     renderTimeline();
@@ -502,22 +519,61 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     begin();
     it.muted = true;
     let first: EdItem | null = null;
+    const combined =
+      streams.length > 1 &&
+      /^(combined(?: audio)?|mix(?:ed)?(?: audio)?|desktop mix)$/i.test(
+        streams[0].title?.trim() ?? '',
+      );
+    const ambiguous = streams.length > 1 && !combined && !streams.every((stream) => stream.title?.trim());
     for (const stream of streams) {
-      // Keep detached streams aligned even when an existing lane is occupied.
-      let lane = project!.tracks.find(t => t.type === 'audio' && !project!.items.some(
-        other => other.trackId === t.id && other.start < it.start + it.dur &&
-          other.start + other.dur > it.start));
+      const named = Boolean(stream.title?.trim());
+      const title = named ? stream.title! : translate('editor.recordedTrack', {number: stream.index + 1});
+      const sourceKey = named ? 'title:'+title+':'+stream.index : (clipOf(it)?.library_id ?? it.clipId) + ':' + stream.index;
+      let lane = project!.tracks.find(
+        (track) =>
+          track.type === 'audio' &&
+          (track.sourceKey === sourceKey ||
+            (!track.sourceKey &&
+              /^A\d+$/.test(track.label) &&
+              !project!.items.some((other) => other.trackId === track.id))) &&
+          !project!.items.some(
+            (other) =>
+              other.trackId === track.id &&
+              other.start < it.start + it.dur &&
+              other.start + other.dur > it.start,
+          ),
+      );
+      const initialMute = combined
+        ? stream.index === streams[0].index
+        : ambiguous && stream.index !== streams[0].index;
       if (!lane) {
-        lane = {id: uid(), type: 'audio', label: `A${project!.tracks.filter(t => t.type === 'audio').length + 1}`};
+        lane = {id: uid(), type: 'audio', label: title, sourceKey, muted: initialMute};
         project!.tracks.push(lane);
+      } else if (!lane.sourceKey) {
+        lane.label = title;
+        lane.sourceKey = sourceKey;
+        lane.muted ??= initialMute;
       }
-      const audio = insert({id: uid(), kind: 'audio', trackId: lane.id,
-        clipId: it.clipId, start: it.start, dur: it.dur, offset: it.offset || 0,
-        audioStream: stream.index, volume: 1, muted: stream.index !== 0});
+      const audio = insert({
+        id: uid(),
+        kind: 'audio',
+        trackId: lane.id,
+        clipId: it.clipId,
+        start: it.start,
+        dur: it.dur,
+        offset: it.offset || 0,
+        audioStream: stream.index,
+        volume: 1,
+        muted: false,
+      });
       first ??= audio;
     }
     sel = first!.id;
+    selectedIds = new Set([sel]);
     commit();
+    deps.notify(
+      translate(ambiguous ? 'audioWorkflow.ambiguousDetach' : 'audioWorkflow.detachedHelp'),
+    );
   }
 
   function duplicate() {
@@ -532,26 +588,123 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function copySel() {
-    const it = selItem();
-    if (it) clipboard = JSON.parse(JSON.stringify(it));
+    const selected = selectedIds.size
+      ? [...selectedIds].map((id) => item(id)).filter((it): it is EdItem => Boolean(it))
+      : [selItem()].filter((it): it is EdItem => Boolean(it));
+    if (selected.length) clipboard = JSON.parse(JSON.stringify(selected));
   }
-
   function paste() {
-    if (!clipboard || !project!.tracks.find(t => t.id === clipboard!.trackId)) return;
+    if (
+      !clipboard?.length ||
+      clipboard.some((it) => !project!.tracks.some((t) => t.id === it.trackId))
+    )
+      return;
     begin();
-    const copy: EdItem = {...clipboard, id: uid(), start: round(playhead)};
-    delete copy.trans;
-    insert(copy);
-    sel = copy.id;
+    const first = Math.min(...clipboard.map((it) => it.start));
+    selectedIds.clear();
+    for (const it of clipboard) {
+      const copy = {...it, id: uid(), start: round(playhead + it.start - first)};
+      delete copy.trans;
+      insert(copy);
+      selectedIds.add(copy.id);
+      sel = copy.id;
+    }
+    selectedTrackId = null;
+    commit();
+  }
+  function remove() {
+    const ids = selectedIds.size ? selectedIds : new Set(sel ? [sel] : []);
+    if (!ids.size) return;
+    begin();
+    project!.items = project!.items.filter((it) => !ids.has(it.id));
+    sel = null;
+    selectedIds.clear();
     commit();
   }
 
-  function remove() {
-    if (!sel) return;
-    begin();
-    project!.items = project!.items.filter(i => i.id !== sel);
+  function selectTrack(id: string) {
+    if (!project?.tracks.some((t) => t.id === id)) return;
+    selectedTrackId = id;
     sel = null;
+    selectedIds.clear();
+    renderTimelineSelection();
+    emit();
+  }
+  function renameTrack(id: string, label: string) {
+    const track = project?.tracks.find((t) => t.id === id);
+    if (!track || !label.trim() || track.label === label) return;
+    begin();
+    track.label = label.slice(0, 120);
     commit();
+  }
+  function editTrackName(id: string) {
+    const rail = [...box!.timelineCanvas.querySelectorAll<HTMLElement>('[data-rail]')].find(
+      (el) => el.dataset.rail === id,
+    );
+    const track = project?.tracks.find((t) => t.id === id);
+    if (!rail || !track) return;
+    const input = document.createElement('input');
+    input.className = 'text-input ed-track-name';
+    input.maxLength = 120;
+    input.value = track.label;
+    input.setAttribute('aria-label', translate('audioWorkflow.renameTrack'));
+    rail.querySelector('.ed-rail-label')?.replaceWith(input);
+    let done = false;
+    const finish = (save: boolean) => {
+      if (done) return;
+      done = true;
+      if (save) renameTrack(id, input.value);
+      renderTimeline();
+      box?.timelineCanvas.querySelector<HTMLElement>('[data-rail="' + id + '"]')?.focus();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        finish(e.key === 'Enter');
+      }
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.focus();
+    input.select();
+  }
+  function muteTrack(id: string) {
+    const track = project?.tracks.find((t) => t.id === id);
+    if (!track || track.type !== 'audio') return;
+    begin();
+    track.muted = !track.muted;
+    scheduleSave();
+    renderTimeline();
+    renderPreviewFrame(false);
+  }
+  function soloTrack(id: string, multiple = false) {
+    if (!project?.tracks.some((t) => t.id === id && t.type === 'audio')) return;
+    const had = soloed.has(id),
+      only = soloed.size === 1;
+    if (!multiple) soloed.clear();
+    if (multiple && had) soloed.delete(id);
+    else if (!had || (!multiple && !only)) soloed.add(id);
+    renderTimeline();
+    renderPreviewFrame(false);
+  }
+  function setTrackVolume(id: string, volume: number) {
+    const track = project?.tracks.find((t) => t.id === id);
+    if (!track || track.type !== 'audio' || !Number.isFinite(volume)) return;
+    begin();
+    track.volume = Math.max(0, Math.min(1, volume));
+    scheduleSave();
+    renderTimeline();
+    renderPreviewFrame(false);
+  }
+  function trackAudible(id: string) {
+    return !project?.tracks.find((t) => t.id === id)?.muted && (!soloed.size || soloed.has(id));
+  }
+  function selectTrackContents(id: string) {
+    selectTrack(id);
+    selectedIds = new Set(items(id).map((it) => it.id));
+    sel = items(id)[0]?.id ?? null;
+    renderTimelineSelection();
+    emit();
   }
 
   function addTrack(type: 'video' | 'audio') {
@@ -574,13 +727,13 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     begin();
     project!.tracks = project!.tracks.filter(t => t.id !== id);
     project!.items = project!.items.filter(i => i.trackId !== id);
-    sel = null;
+    sel = null;selectedTrackId=null;selectedIds.clear();soloed.delete(id);
     commit();
   }
 
   function reset() {
     begin();
-    project = defaultProject();
+    project = defaultProject();soloed.clear();selectedTrackId=null;selectedIds.clear();
     sel = null;
     playhead = 0;
     setPlaying(false);
@@ -589,6 +742,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function select(id: string | null) {
+    selectedTrackId = null;
+    selectedIds = new Set(id ? [id] : []);
     sel = id;
     renderTimelineSelection();
     renderTexts(playhead);
@@ -940,7 +1095,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       cur._warmUntil = 0;
       window.clearTimeout(cur._warmTimer);
       cur._warmTimer = undefined;
-      cur.muted = monitorMuted || Boolean(it.muted);
+      cur.muted = monitorMuted || Boolean(it.muted) || !trackAudible(it.trackId);
       // The clock reads its time from the master element, so correcting that
       // element is chasing its own tail. Only a fresh cut, or a track playing
       // underneath the master, needs a correction.
@@ -950,7 +1105,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       cur._parkAt = desired;
     } else {
       if (!cur.paused) cur.pause();
-      cur.muted = monitorMuted || Boolean(it.muted);
+      cur.muted = monitorMuted || Boolean(it.muted) || !trackAudible(it.trackId);
       seekVideo(cur, desired);
     }
 
@@ -1031,7 +1186,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const active = new Set<string>();
     activeAudio = [];
     project!.items.forEach(it => {
-      if (it.kind !== 'audio' || it.muted || (it.volume ?? 1) === 0) return;
+      if (it.kind !== 'audio' || it.muted || !trackAudible(it.trackId) || (it.volume ?? 1) === 0) return;
       if (t < it.start || t >= it.start + it.dur || missing.has(it.clipId!)) return;
       const clip = clipOf(it);
       if (!clip) return;
@@ -1055,7 +1210,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const url = `${clip.audio_url ?? `/api/clips/${encodeURIComponent(clip.slug)}/audio`}/${it.audioStream ?? 0}${revision}`;
       if (a.getAttribute('src') !== url) a.src = url;
       if (a.playbackRate !== playbackRate) a.playbackRate = playbackRate;
-      a.volume = Math.max(0, Math.min(1, it.volume ?? 1)) * monitorVolume;
+      a.volume = Math.max(0, Math.min(1, (it.volume ?? 1)*(project!.tracks.find(t=>t.id===it.trackId)?.volume??1))) * monitorVolume;
       a.muted = monitorMuted;
       seekVideo(a, (it.offset || 0) + (t - it.start), playTol());
       activeAudio.push({it,media:a});
@@ -1188,11 +1343,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const it = selItem();
     if (!it) return;
     if (it.kind === 'audio' && ['audioStream', 'volume', 'muted'].includes(field)) {
-      begin();
+      if(!inspectorEditing)begin();
       if (field === 'muted') it.muted = Boolean(value);
       else if (field === 'audioStream') it.audioStream = Number(value);
       else it.volume = Math.max(0, Math.min(1, Number(value)));
-      commit();
+      scheduleSave();renderTimeline();renderPreviewFrame(false);
       return;
     }
     if (it.kind !== 'text') return;
@@ -1464,11 +1619,12 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         const junctions =
           tr.type === 'video' ? laneItems.filter(i => i.trans).map(junctionHTML).join('') : '';
         return `<div class="ed-track-row">
-      <div class="ed-rail ${tr.type}" data-rail="${escAttr(tr.id)}" title="${escAttr(translate('editor.trackOptionsHint'))}">
+      <div class="ed-rail ${tr.type}" tabindex="0" data-selected="${tr.id===selectedTrackId}" data-muted="${Boolean(tr.muted)}" data-solo="${soloed.has(tr.id)}" data-rail="${escAttr(tr.id)}" title="${escAttr(tr.label+' · '+translate('editor.trackOptionsHint'))}">
         <span class="ed-rail-label">${escHtml(tr.label)}</span>
-        <span class="ed-rail-type">${tr.type.slice(0, 3).toUpperCase()}</span>
+        ${tr.type==='audio'?`<span class="ed-track-controls"><button type="button" data-track-mute="${escAttr(tr.id)}" aria-label="${escAttr(translate('audioWorkflow.trackMute',{name:tr.label}))}" aria-pressed="${Boolean(tr.muted)}" title="${escAttr(translate('audioWorkflow.muteTrack'))} (Shift+M)">M</button><button type="button" data-track-solo="${escAttr(tr.id)}" aria-label="${escAttr(translate('audioWorkflow.trackSolo',{name:tr.label}))}" aria-pressed="${soloed.has(tr.id)}" title="${escAttr(translate('audioWorkflow.soloHelp'))} (Shift+S)">S</button><input type="range" data-playback-control="volume" data-track-volume="${escAttr(tr.id)}" min="0" max="100" step="1" value="${Math.round((tr.volume??1)*100)}" aria-label="${escAttr(translate('audioWorkflow.trackVolume',{name:tr.label}))}" title="${Math.round((tr.volume??1)*100)}%"></span>`:''}
+        <span class="ed-rail-type">${tr.type==='audio'?'A'+(project!.tracks.filter(t=>t.type==='audio').findIndex(t=>t.id===tr.id)+1):tr.type.slice(0,3).toUpperCase()}</span>
       </div>
-      <div class="ed-lane ${tr.type}" tabindex="0" data-lane="${escAttr(tr.id)}" style="width:${totalW}px">
+      <div class="ed-lane ${tr.type}" data-track-muted="${Boolean(tr.muted)}" data-monitor-muted="${Boolean(soloed.size&&!soloed.has(tr.id))}" tabindex="0" data-lane="${escAttr(tr.id)}" style="width:${totalW}px">
         ${rendered}${junctions}
       </div>
     </div>`;
@@ -1494,8 +1650,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function renderTimelineSelection() {
     if (!box) return;
+    box.timelineCanvas.querySelectorAll<HTMLElement>('[data-rail]').forEach(rail=>rail.dataset.selected=String(rail.dataset.rail===selectedTrackId));
     box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-item').forEach(el => {
-      el.classList.toggle('selected', el.dataset.item === sel);
+      el.classList.toggle('selected', el.dataset.item === sel || selectedIds.has(el.dataset.item!));
     });
   }
 
@@ -1526,33 +1683,71 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (!box) return;
     const ruler = box.timelineCanvas.querySelector<HTMLElement>('#ed-ruler');
     if (ruler) {
-      ruler.addEventListener('pointerdown', e => startScrub(ruler,e));
+      ruler.addEventListener('pointerdown', (e) => startScrub(ruler, e));
     }
 
-    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-rail').forEach(rail => {
-      rail.addEventListener('contextmenu', e => openTrackMenu(e, rail.dataset.rail!));
+    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-rail').forEach((rail) => {
+      rail.addEventListener('pointerdown', (e) => {
+        if (!(e.target as Element).closest('button,input')) {
+          selectTrack(rail.dataset.rail!);
+          rail.focus({preventScroll: true});
+        }
+      });
+      rail.addEventListener('dblclick', (e) => {
+        if (!(e.target as Element).closest('button,input')) editTrackName(rail.dataset.rail!);
+      });
+      rail.querySelector<HTMLButtonElement>('[data-track-mute]')?.addEventListener('click', () => {
+        selectTrack(rail.dataset.rail!);
+        muteTrack(rail.dataset.rail!);
+      });
+      rail.querySelector<HTMLButtonElement>('[data-track-solo]')?.addEventListener('click', (e) => {
+        selectTrack(rail.dataset.rail!);
+        soloTrack(rail.dataset.rail!, e.shiftKey);
+      });
+      const gain = rail.querySelector<HTMLInputElement>('[data-track-volume]');
+      let editing = false;
+      gain?.addEventListener('pointerdown',()=>selectTrack(rail.dataset.rail!));
+      gain?.addEventListener('input', () => {
+        const track = project!.tracks.find((t) => t.id === rail.dataset.rail)!;
+        if (!editing) {
+          begin();
+          editing = true;
+        }
+        track.volume = Number(gain.value) / 100;
+        gain.title = gain.value + '%';
+        scheduleSave();
+        renderPreviewFrame(false);
+      });
+      gain?.addEventListener('change', () => {
+        editing = false;
+        emit();
+      });
+      rail.addEventListener('contextmenu', (e) => openTrackMenu(e, rail.dataset.rail!));
     });
 
-    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-lane').forEach(lane => {
+    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-lane').forEach((lane) => {
       const trackId = lane.dataset.lane!;
-      lane.addEventListener('pointerdown', e => {
-        if (e.target === lane && e.button === 0) {select(null);startScrub(lane,e);}
+      lane.addEventListener('pointerdown', (e) => {
+        if (e.target === lane && e.button === 0) {
+          select(null);
+          startScrub(lane, e);
+        }
       });
-      lane.addEventListener('contextmenu', e => {
+      lane.addEventListener('contextmenu', (e) => {
         if (e.target === lane) openTrackMenu(e, trackId);
       });
-      lane.addEventListener('dragover', e => laneDragOver(e, lane, trackId));
+      lane.addEventListener('dragover', (e) => laneDragOver(e, lane, trackId));
       lane.addEventListener('dragleave', () => {
         if (dropHint && dropHint.trackId === trackId) clearDropHints();
       });
-      lane.addEventListener('drop', e => laneDrop(e, lane, trackId));
+      lane.addEventListener('drop', (e) => laneDrop(e, lane, trackId));
 
-      lane.querySelectorAll<HTMLElement>('.ed-item').forEach(el => {
+      lane.querySelectorAll<HTMLElement>('.ed-item').forEach((el) => {
         const id = el.dataset.item!;
-        el.addEventListener('pointerdown', e => itemPointerDown(e, el, id));
-        el.addEventListener('contextmenu', e => openItemMenu(e, id));
+        el.addEventListener('pointerdown', (e) => itemPointerDown(e, el, id));
+        el.addEventListener('contextmenu', (e) => openItemMenu(e, id));
         if (el.classList.contains('ed-item-clip')) {
-          el.addEventListener('dragover', e => {
+          el.addEventListener('dragover', (e) => {
             if (drag && drag.kind === 'fx' && !nearJunction(e, el, id)) {
               e.preventDefault();
               e.stopPropagation();
@@ -1560,7 +1755,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
             }
           });
           el.addEventListener('dragleave', () => el.classList.remove('fx-target'));
-          el.addEventListener('drop', e => {
+          el.addEventListener('drop', (e) => {
             if (drag && drag.kind === 'fx' && !nearJunction(e, el, id)) {
               e.preventDefault();
               e.stopPropagation();
@@ -1572,9 +1767,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         }
       });
 
-      lane.querySelectorAll<HTMLElement>('.ed-junction').forEach(j =>
-        wireJunction(j, j.dataset.junction!),
-      );
+      lane
+        .querySelectorAll<HTMLElement>('.ed-junction')
+        .forEach((j) => wireJunction(j, j.dataset.junction!));
     });
   }
 
@@ -1836,26 +2031,27 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   type MenuEntry = {label: string; fn: () => void; kbd?: string; dis?: boolean; danger?: boolean};
 
   function menu(x: number, y: number, entries: Array<MenuEntry | '-'>) {
-    document.getElementById('ed-menu')?.remove();
+    closeMenu();
     const el = document.createElement('div');
     el.id = 'ed-menu';
     el.className = 'ed-menu';
+    el.setAttribute('role', 'menu');
     el.innerHTML = entries
       .map((en, i) =>
         en === '-'
           ? '<div class="ed-menu-sep"></div>'
-          : `<button class="ed-menu-item${en.danger ? ' danger' : ''}" data-i="${i}" ${en.dis ? 'disabled' : ''}>
-        <span>${escHtml(en.label)}</span>${en.kbd ? `<span class="kbd-hint">${escHtml(en.kbd)}</span>` : ''}
-      </button>`,
+          : `<button role="menuitem" class="ed-menu-item${en.danger ? ' danger' : ''}" data-i="${i}" ${en.dis ? 'disabled' : ''}>
+          <span>${escHtml(en.label)}</span>${en.kbd ? `<span class="kbd-hint">${escHtml(en.kbd)}</span>` : ''}
+        </button>`,
       )
       .join('');
     document.body.appendChild(el);
 
-    el.querySelectorAll<HTMLElement>('.ed-menu-item').forEach(btn => {
-      btn.onclick = e => {
+    el.querySelectorAll<HTMLElement>('.ed-menu-item').forEach((btn) => {
+      btn.onclick = (e) => {
         e.stopPropagation();
         const en = entries[parseInt(btn.dataset.i!, 10)];
-        el.remove();
+        closeMenu();
         if (en && en !== '-' && !en.dis) en.fn();
       };
     });
@@ -1866,11 +2062,38 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     el.style.top = `${Math.max(8, Math.min(y, window.innerHeight - el.offsetHeight - 8))}px`;
     const dismiss = (e: Event) => {
       if (!el.contains(e.target as Node)) {
-        el.remove();
-        document.removeEventListener('pointerdown', dismiss, true);
+        closeMenu();
       }
     };
-    window.setTimeout(() => document.addEventListener('pointerdown', dismiss, true), 0);
+    const previous = document.activeElement as HTMLElement | null;
+    const onKey = (event: KeyboardEvent) => {
+      const buttons = [...el.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+      let index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu();
+        previous?.focus();
+      } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        event.preventDefault();
+        index =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? buttons.length - 1
+              : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+        buttons[index]?.focus();
+      }
+    };
+    const timer = window.setTimeout(() => document.addEventListener('pointerdown', dismiss, true), 0);
+    closeMenu = () => {
+      window.clearTimeout(timer);
+      el.remove();
+      document.removeEventListener('pointerdown', dismiss, true);
+      el.removeEventListener('keydown', onKey);
+    };
+    el.addEventListener('keydown', onKey);
+    el.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
   }
 
   function openItemMenu(e: MouseEvent, id: string) {
@@ -1882,7 +2105,39 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     const canSplit = playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2;
     menu(e.clientX, e.clientY, [
       {label: translate('editor.menuSplit'), kbd: 'S', fn: split, dis: !canSplit},
-      {label: translate('editor.menuDetach'), fn: detachAudio, dis: !snapshot().canDetach},
+      ...(it.kind === 'clip'
+        ? [{label: translate('editor.menuDetach'), fn: detachAudio, dis: !snapshot().canDetach}]
+        : []),
+      ...(it.kind === 'audio'
+        ? [
+            {
+              label: translate(it.muted ? 'audioWorkflow.unmuteItem' : 'audioWorkflow.muteItem'),
+              fn: () => inspectorChange('muted', !it.muted),
+            },
+            {
+              label: translate('audioWorkflow.adjustVolume'),
+              fn: () => {
+                const input = box?.stage
+                  .closest('.editor')
+                  ?.querySelector<HTMLInputElement>('[data-ed-volume] input');
+                input?.scrollIntoView({block: 'nearest'});
+                input?.focus();
+              },
+            },
+          ]
+        : []),
+      ...(it.clipId
+        ? [
+            {
+              label: translate('audioWorkflow.revealOriginal'),
+              fn: () => {
+                const clip = clipOf(it);
+                if (clip) deps.revealSource?.(clip);
+              },
+              dis: !deps.revealSource,
+            },
+          ]
+        : []),
       '-',
       {label: translate('editor.menuCopy'), kbd: 'Ctrl C', fn: copySel},
       {label: translate('editor.menuPaste'), kbd: 'Ctrl V', fn: paste, dis: !clipboard},
@@ -1895,11 +2150,30 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function openTrackMenu(e: MouseEvent, trackId: string) {
     e.preventDefault();
     e.stopPropagation();
-    const tr = project!.tracks.find(t => t.id === trackId);
+    const tr = project!.tracks.find((t) => t.id === trackId);
     if (!tr) return;
-    const removable =
-      tr.type !== 'text' && !(tr.type === 'video' && videoTracks().length <= 1);
+    selectTrack(trackId);
+    const removable = tr.type !== 'text' && !(tr.type === 'video' && videoTracks().length <= 1);
     menu(e.clientX, e.clientY, [
+      {label: translate('audioWorkflow.renameTrack'), kbd: 'F2', fn: () => editTrackName(trackId)},
+      ...(tr.type === 'audio'
+        ? [
+            {
+              label: translate(tr.muted ? 'audioWorkflow.unmuteTrack' : 'audioWorkflow.muteTrack'),
+              kbd: 'Shift+M',
+              fn: () => muteTrack(trackId),
+            },
+            {
+              label: translate(
+                soloed.has(trackId) ? 'audioWorkflow.unsoloTrack' : 'audioWorkflow.soloTrack',
+              ),
+              kbd: 'Shift+S',
+              fn: () => soloTrack(trackId, soloed.has(trackId)),
+            },
+            {label: translate('audioWorkflow.resetVolume'), fn: () => setTrackVolume(trackId, 1)},
+          ]
+        : []),
+      {label: translate('audioWorkflow.selectContents'), fn: () => selectTrackContents(trackId)},
       {label: translate('editor.menuAddVideoTrack'), fn: () => addTrack('video')},
       {label: translate('editor.menuAddAudioTrack'), fn: () => addTrack('audio')},
       {label: translate('editor.menuPaste'), kbd: 'Ctrl V', fn: paste, dis: !clipboard},
@@ -2069,24 +2343,55 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function onKeyDown(e: KeyboardEvent) {
     if (!mounted || !project) return false;
     if (e.altKey) return false;
-    if (playbackShortcut(e, {
-      rename: () => {
-        const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.ed-lib-clip');
-        const item = selItem();
-        const source = clips().find(clip => clip.slug === (focused?.dataset.slug ?? (item?.kind !== 'text' ? item?.clipId : undefined)));
-        if (source) deps.renameSource?.(source);
-      },
-      toggle: () => setPlaying(!playing), mute: () => {
-        if (deps.monitoring) deps.monitoring().toggleMuted();
-        else setMonitoring(monitorVolume, !monitorMuted);
-      },
-      seek: at => seek(at), time: () => playhead, duration: end,
-      volume: () => deps.monitoring?.().volume ?? monitorVolume,
-      setVolume: level => {
-        if (deps.monitoring) deps.monitoring().setVolume(level);
-        else setMonitoring(level, monitorMuted);
-      }, boundary: trimSelected,
-    })) return true;
+    if (!e.ctrlKey && !e.metaKey && e.shiftKey && ['m', 's'].includes(e.key.toLowerCase())) {
+      const trackId = selectedTrackId ?? selItem()?.trackId;
+      if (!trackId || !project.tracks.some((t) => t.id === trackId && t.type === 'audio'))
+        return false;
+      if (!e.repeat) {
+        if (e.key.toLowerCase() === 'm') muteTrack(trackId);
+        else soloTrack(trackId);
+      }
+      return true;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      redo();
+      return true;
+    }
+    if (
+      playbackShortcut(e, {
+        rename: () => {
+          if (selectedTrackId) {
+            editTrackName(selectedTrackId);
+            return;
+          }
+          const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
+            '.ed-lib-clip',
+          );
+          const item = selItem();
+          const source = clips().find(
+            (clip) =>
+              clip.slug ===
+              (focused?.dataset.slug ?? (item?.kind !== 'text' ? item?.clipId : undefined)),
+          );
+          if (source) deps.renameSource?.(source);
+        },
+        toggle: () => setPlaying(!playing),
+        mute: () => {
+          if (deps.monitoring) deps.monitoring().toggleMuted();
+          else setMonitoring(monitorVolume, !monitorMuted);
+        },
+        seek: (at) => seek(at),
+        time: () => playhead,
+        duration: end,
+        volume: () => deps.monitoring?.().volume ?? monitorVolume,
+        setVolume: (level) => {
+          if (deps.monitoring) deps.monitoring().setVolume(level);
+          else setMonitoring(level, monitorMuted);
+        },
+        boundary: trimSelected,
+      })
+    )
+      return true;
     const mod = e.metaKey || e.ctrlKey;
     if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) remove();
     else if (mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
@@ -2105,9 +2410,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       e.preventDefault();
       duplicate();
     } else if (!mod && (e.key === 's' || e.key === 'S')) split();
-
-    else if (!mod && e.key === 'Escape') select(null);
-    else if (!mod && (e.key === '+' || e.key === '=')) zoom(1.3);
+    else if (!mod && e.key === 'Escape') {
+      closeMenu();
+      select(null);
+    } else if (!mod && (e.key === '+' || e.key === '=')) zoom(1.3);
     else if (!mod && e.key === '-') zoom(1 / 1.3);
     else return false;
     return true;
@@ -2142,7 +2448,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     releasePool();
     stageObserver?.disconnect();
     stageObserver = null;
-    document.getElementById('ed-menu')?.remove();
+    closeMenu();
     if (dirty) void saveNow();
     box = null;
   }
@@ -2199,7 +2505,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
           project = merge(project);
           undoStack = undoStack.map(snapshot=>JSON.stringify(merge(JSON.parse(snapshot))));
           redoStack = redoStack.map(snapshot=>JSON.stringify(merge(JSON.parse(snapshot))));
-          if(clipboard) clipboard=merge({version:1,tracks:[],items:[clipboard]}).items[0] ?? null;
+          if(clipboard) clipboard=merge({version:1,tracks:[],items:clipboard}).items;
           serverItemIds = new Set(saved.keys());
           refreshMissing();
           scheduleSave();
@@ -2230,12 +2536,15 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     seek,
     setPlaying,
     setMonitoring,
+    beginInspectorEdit:()=>{if(!inspectorEditing){begin();inspectorEditing=true;}},
+    endInspectorEdit:()=>{inspectorEditing=false;},
     trimSelected,
     split,
     detachAudio,
     duplicate,
     remove,
     addTrack,
+    selectTrack,renameTrack,muteTrack,soloTrack,setTrackVolume,
     reset,
     select,
     inspectorChange,

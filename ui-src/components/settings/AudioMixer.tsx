@@ -1,3 +1,4 @@
+import {AudioWarningPreferences} from './AudioWarningPreferences';
 import {useEffect, useRef, useState} from 'react';
 import {api} from '../../lib/api';
 import {t} from '../../lib/i18n';
@@ -686,6 +687,7 @@ export function AudioMixer({
         </div>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      <AudioWarningPreferences value={draft.audioWarningPreferences} sourceNames={Object.fromEntries(Object.entries(draft.audioSources).map(([id,source])=>[id,source.name??id]))} onChange={audioWarningPreferences=>update({audioWarningPreferences})}/>
     </section>
   );
 }

@@ -1353,5 +1353,34 @@
     "connected": "Verbunden; warte auf Ton",
     "captured": "Ton in Probe aufgenommen"
   }
-}
+},
+  "audioWorkflow": {
+    "ambiguousDetach": "Diese Streams haben keine Quellnamen. Anfangs ist nur die erste Spur hörbar. Wähle weitere Quellen mit M; eine unbenannte Spur könnte einen kombinierten Mix enthalten.",
+    "warningPreferences": "Audiowarnungen",
+    "critical": "Kritische Aufnahmefehler",
+    "disconnected": "Getrennte Audioquellen",
+    "silence": "Längere Stille melden",
+    "silenceDuration": "Dauer der Stille (Sekunden)",
+    "restoreWarning": "Warnung wieder aktivieren",
+    "silenceCondition": "Diese Warnung stummschalten",
+    "silenceSource": "Diese Quelle stummschalten",
+    "renameTrack": "Spur umbenennen",
+    "muteTrack": "Spur stummschalten",
+    "unmuteTrack": "Spur aktivieren",
+    "soloTrack": "Spur solo hören",
+    "unsoloTrack": "Solo aufheben",
+    "resetVolume": "Lautstärke zurücksetzen",
+    "selectContents": "Spurinhalt auswählen",
+    "muteItem": "Element stummschalten",
+    "unmuteItem": "Element aktivieren",
+    "adjustVolume": "Lautstärke anpassen",
+    "revealOriginal": "Originalclip anzeigen",
+    "trackMute": "{name} stummschalten",
+    "trackSolo": "Solo: {name}",
+    "trackVolume": "Lautstärke: {name}",
+    "soloHelp": "Solo; Umschalt-Klick für mehrere Spuren",
+    "detachedHelp": "Audio getrennt. Einzelne Streams sind hörbar; ein kombinierter Mix ist stumm, um doppelte Wiedergabe zu vermeiden. Wähle mit M/S und den Elementreglern, was du hörst.",
+    "separateExport": "Separate benannte Audiospuren exportieren",
+    "shortcuts": "Leertaste: Wiedergabe/Pause (halten zum Beschleunigen); Pfeile: Position/Lautstärke; Umschalt+Links/Rechts: fein suchen; I/O: trimmen; S: teilen; F2: Spur oder Medium umbenennen; Umschalt+M/S: stumm/solo; Strg+Z: rückgängig; Strg+Umschalt+Z oder Strg+Y: wiederholen; Strg+C/V: kopieren/einfügen; Entf: löschen; Esc: Menü schließen oder Auswahl aufheben."
+  }
 }

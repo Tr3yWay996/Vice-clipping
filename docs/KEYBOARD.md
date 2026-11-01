@@ -165,3 +165,22 @@ shortcuts available to the active player. Tab-focused controls keep native butto
 activation and volume-slider steps; text/inspector fields keep normal typing keys.
 The Viewer includes its detached transport bar in this scope. See
 [playback synchronization](PLAYBACK.md) for decoder, buffering and timeline details.
+
+## Editor audio tracks
+
+Select a track header, then press **F2** to edit its name. Double-clicking the
+header or choosing Rename Track from its context menu does the same. Internal
+track IDs remain unchanged. F2 on a clip/item still renames its original media.
+
+**Shift+M** toggles the selected audio track's persistent mute; **Shift+S** toggles
+its temporary Solo. With an audio item selected these shortcuts use its track.
+Click **S** to isolate a track; Shift-click adds/removes tracks from the monitored
+set. Clicking a sole soloed track clears Solo. Volume remains independent. Solo
+is never saved or exported. Track mute affects every item in that lane and is
+separate from each item's own mute. **Ctrl+Y** also redoes an edit.
+
+A track's context menu can select all its items for copy, paste, and deletion.
+Deleting items or tracks and changing names, mutes, or volumes are undoable.
+Arrow keys and Space keep working after mouse-operated volume controls; sliders
+focused with Tab keep their native arrow-key adjustments. Text inputs and modal
+dialogs retain keyboard ownership.

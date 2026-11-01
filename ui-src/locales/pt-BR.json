@@ -1285,5 +1285,34 @@
     "connected": "Conectada; aguardando som",
     "captured": "Som capturado na amostra"
   }
-}
+},
+  "audioWorkflow": {
+    "ambiguousDetach": "Estes fluxos não têm nomes de origem, então apenas a primeira faixa começa audível. Use M em cada faixa para escolher outras fontes; uma faixa sem nome pode conter uma mixagem combinada.",
+    "warningPreferences": "Avisos de áudio",
+    "critical": "Falhas críticas de captura",
+    "disconnected": "Fontes de áudio desconectadas",
+    "silence": "Avisar sobre silêncio prolongado",
+    "silenceDuration": "Duração do silêncio (segundos)",
+    "restoreWarning": "Restaurar aviso",
+    "silenceCondition": "Silenciar este aviso",
+    "silenceSource": "Silenciar esta fonte",
+    "renameTrack": "Renomear faixa",
+    "muteTrack": "Silenciar faixa",
+    "unmuteTrack": "Ativar faixa",
+    "soloTrack": "Ouvir faixa em solo",
+    "unsoloTrack": "Desativar solo",
+    "resetVolume": "Redefinir volume",
+    "selectContents": "Selecionar conteúdo da faixa",
+    "muteItem": "Silenciar item",
+    "unmuteItem": "Ativar item",
+    "adjustVolume": "Ajustar volume",
+    "revealOriginal": "Mostrar clipe original",
+    "trackMute": "Silenciar {name}",
+    "trackSolo": "Solo: {name}",
+    "trackVolume": "Volume: {name}",
+    "soloHelp": "Solo; Shift-clique para ouvir várias faixas",
+    "detachedHelp": "Áudio separado. Os fluxos individuais estão audíveis; a mixagem combinada fica silenciada para evitar áudio duplicado. Use M/S e os controles dos itens para escolher o que ouvir.",
+    "separateExport": "Exportar faixas de áudio separadas com nomes",
+    "shortcuts": "Espaço: reproduzir/pausar (segure para acelerar); setas: posição/volume; Shift+Esquerda/Direita: busca precisa; I/O: cortar; S: dividir; F2: renomear faixa ou mídia; Shift+M/S: silenciar/solo; Ctrl+Z: desfazer; Ctrl+Shift+Z ou Ctrl+Y: refazer; Ctrl+C/V: copiar/colar; Delete: excluir; Escape: fechar menu ou limpar seleção."
+  }
 }

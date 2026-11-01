@@ -86,9 +86,12 @@ fabricated silent/active level. The UI separately identifies a GSR connection to
 the source, so application discovery alone does not prove recording.
 
 Warnings distinguish missing game, missing stream, disconnected routing,
-unsupported capture, muted sources, and sustained silence. Silence is reported
-only after 30 seconds of an active stream without signal; no repeated alert
-notifications are generated. Naturally idle streams remain connected. These
+unsupported capture, muted sources, and sustained silence. Silence remains a
+Settings status and creates no intrusive warning by default.
+Optional silence notifications use a configurable duration (180 seconds by
+default). Actual failures have dismissible, deduplicated episodes that clear on
+recovery; see [warning preferences and editor audio](EDITOR-AUDIO.md).
+Naturally idle streams remain connected. These
 checks cannot prove a game's intended sound exists if the game itself is silent.
 
 **Test Audio Capture** records three seconds from each applied individual source,

@@ -440,6 +440,7 @@ class ViceDaemon:
         recording = asdict(self.cfg.recording)
         recording.pop("audio_track_volumes", None)
         recording.pop("audio_sources", None)
+        recording.pop("audio_warning_preferences", None)
         return json.dumps(recording, sort_keys=True)
 
     def _clips_in_library(self) -> int:
