@@ -54,9 +54,9 @@ class PeakMonitor:
         p = None
         try:
             name = ctypes.util.find_library("pulse")
-            if not name:
-                raise RuntimeError("libpulse unavailable")
-            p = C.CDLL(name)
+            # Nix may expose the library through LD_LIBRARY_PATH without an
+            # ldconfig entry or compiler available to ctypes.find_library.
+            p = C.CDLL(name or "libpulse.so.0")
 
             def bind(name, ret, args):
                 fn = getattr(p, name)
