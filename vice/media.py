@@ -32,7 +32,7 @@ def media_revision(path: Path) -> str:
 # Suffix patterns for temp files written during in-place edits
 # (trim / watermark / remux). Leftovers mean a previous run was
 # interrupted mid-edit; they are safe to delete at daemon startup.
-TEMP_FILE_GLOBS = ("*.trim.mp4", "*.wm.mp4", "*.fix.mp4", "*.trimming.mp4",
+TEMP_FILE_GLOBS = ("*.audio-titles.mp4", "*.audio-titles.mkv", "*.trim.mp4", "*.wm.mp4", "*.fix.mp4", "*.trimming.mp4",
                    "*.trim.mkv", "*.wm.mkv", "*.fix.mkv", "*.trimming.mkv",
                    "*.export.mp4",
                    # Left behind when an image annotation is interrupted

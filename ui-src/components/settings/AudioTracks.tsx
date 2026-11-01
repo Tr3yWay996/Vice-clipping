@@ -1,3 +1,5 @@
+import type {SmartAudioSource} from '../../lib/types';
+import type {ReactNode} from 'react';
 import {IconClose} from '../Icons';
 import {Slider} from './Fields';
 import {tracksLostWithoutDesktopAudio} from '../../lib/settingsDraft';
@@ -29,8 +31,10 @@ export function AudioTracks({
   onDuplicate,
   volumes,
   onVolumeChange,
-  micTrack,
+  micTrack, picker, smartSources,
 }: {
+  picker?:ReactNode;
+  smartSources?:Record<string,SmartAudioSource>;
   tracks: string[];
   sources: AudioSource[];
   mixFirst: boolean;
@@ -48,7 +52,7 @@ export function AudioTracks({
    * show, with its volume. */
   micTrack: {value: number; onChange: (percent: number) => void} | null;
 }) {
-  const label = (id: string) => sources.find(s => s.id === id)?.label || id;
+  const label = (id: string) => smartSources?.[id]?.name || sources.find(s => s.id === id)?.label || id;
 
   const add = () => {
     if (!pick) return;
@@ -71,12 +75,12 @@ export function AudioTracks({
   // mix, so showing it below that would be a lie about what gets recorded.
   const showsMix = mixFirst && tracks.length > 1;
   const base = showsMix ? 2 : 1;
-  const {dropped, trimmed} = tracksLostWithoutDesktopAudio(tracks);
+  const {dropped, trimmed} = tracksLostWithoutDesktopAudio(tracks,smartSources);
   const warn = !desktopAudioOn && (dropped.length > 0 || trimmed.length > 0);
 
   return (
     <div className="tracks">
-      <div className="tracks-add">
+      {picker ?? <div className="tracks-add">
         <div className="select-wrap">
           <select
             className="select"
@@ -102,7 +106,7 @@ export function AudioTracks({
           onClick={onRefresh}>
           <RefreshGlyph spinning={refreshing} />
         </button>
-      </div>
+      </div>}
 
       {tracks.length === 0 ? (
         <p className="tracks-empty">{t('audioTracks.none')}</p>

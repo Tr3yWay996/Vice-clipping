@@ -90,6 +90,7 @@ export interface Playlist {
 }
 
 export interface Status {
+  audio?: SmartAudioState | null;
   running: boolean;
   version: string;
   /** A count, not the clips themselves. */
@@ -161,6 +162,7 @@ export interface Config {
 
 /** Every message the daemon broadcasts. */
 export type WsMessage =
+  | {type:"audio_state"; audio:SmartAudioState}
   | ({type:'trash_changed'} & TrashSnapshot)
   | {type: 'games_changed'; games: DetectedGame[]; revision: number}
   | {type: 'jobs_changed'; jobs: ProcessingJob[]}
@@ -267,3 +269,11 @@ export type LibraryMedia = {kind:'clip'; item:Clip} | {kind:'image'; item:Image}
 export const libraryKey = (media:LibraryMedia) => media.item.library_id ?? `${media.kind}:${media.item.slug}`;
 export interface RenamePlan {id:string;kind:'clip'|'image';slug:string;title:string;filename:string;previous_title:string;revision:string;physical_rename:boolean;metadata_only:boolean;code?:string}
 export interface LibraryResult {id:string;ok:boolean;code?:string;value?:string;item?:Clip|Image}
+
+
+export interface AudioMatchRule {field:'name'|'application_id'|'executable'|'executable_path'|'node_name'; mode:'exact'|'contains'|'regex'; value:string}
+export interface SmartAudioSource {name?:string;enabled?:boolean;rules?:AudioMatchRule[];device?:string;exclude?:boolean}
+export interface AudioApplication {node_id:number;serial:string;name:string;application_id:string;executable:string;executable_path?:string;pid:number;node_name:string;destination:string;active:boolean;muted?:boolean;levels:number[]|null;tracks:number[]}
+export interface AudioTrackState {id:string;name:string;enabled:boolean;nodes:number[];state:string;levels:number[]|null;recording_connected?:boolean;ambiguous?:boolean;error?:string;target?:{executable:string}|null}
+export interface SmartAudioState {supported:boolean;backend_supported?:boolean;error:string|null;meter_error?:string|null;recording:boolean;tracks:AudioTrackState[];applications:AudioApplication[]}
+export interface AudioTestResult {id:string;duration:number;tracks:Array<{index:number;name:string;source:string;state:string;levels?:number[];rms_db?:number;url?:string}>}

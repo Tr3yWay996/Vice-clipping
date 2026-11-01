@@ -1350,4 +1350,76 @@
       "prepare": "Prepare for sharing"
     }
   }
+,
+  "audioMixer": {
+    "manage": "Manage this source",
+  "title": "Audio mixer",
+  "help": "Choose the automatic game source once, or add persistent application and device tracks. Application meters show isolated preview taps; track meters show the configured capture monitor.",
+  "auto": "Recorded Game Audio · Automatic",
+  "autoHelp": "Follows the recorded game; keeps its identity when you alt-tab. Never substitutes desktop audio.",
+  "unavailable": "Smart capture requires GPU Screen Recorder, PipeWire, WirePlumber 0.5+, pw-dump, pw-cli, pw-link and pactl. Select desktop/input capture explicitly if you want a fallback.",
+  "search": "Search audio sources",
+  "filterLabel": "Source category",
+  "filter": {
+    "all": "All sources",
+    "applications": "Applications",
+    "devices": "Inputs and outputs"
+  },
+  "noMeter": "Meter unavailable",
+  "unknownOutput": "Output not reported",
+  "running": "Active",
+  "inactive": "Inactive",
+  "onTracks": "Configured on track(s) {tracks}",
+  "input": "Microphone / input device",
+  "output": "Desktop output / virtual device",
+  "newSource": "Application audio",
+  "createRule": "Create an application rule",
+  "saveHelp": "Save settings to apply these changes. Adding/removing tracks changes the recording layout and restarts replay; editing smart rules, names, enabled state or levels does not.",
+  "track": "Track {number}",
+  "enabled": "Enabled",
+  "name": "Track name",
+  "captureConnected": "Recorder connected to this capture monitor",
+  "ambiguous": "This source matches different applications. Refine its rules if this was not intended.",
+  "ruleError": "The matching rule is invalid or exceeded its time limit.",
+  "fieldLabel": "Match field",
+  "field": {
+    "executable": "Executable name",
+    "executable_path": "Executable path",
+    "name": "Application name",
+    "application_id": "Application identifier",
+    "node_name": "PipeWire node name"
+  },
+  "modeLabel": "Match mode",
+  "mode": {
+    "exact": "Exact (ignore case)",
+    "contains": "Contains (ignore case)",
+    "regex": "Regular expression"
+  },
+  "pattern": "Match text",
+  "addRule": "Add another rule",
+  "rulesHelp": "Rules are alternatives: any matching rule includes that stream. Matches include all instances.",
+  "gameRulesHelp": "Leave rules empty for automatic game identity. Explicit rules override automatic matching for this track.",
+  "matches": "Live matches: {names}",
+  "none": "None",
+  "legacyHelp": "This is an existing direct GSR source. Changing its enabled state converts it to a managed source in the same track position.",
+  "test": "Test Audio Capture",
+  "testing": "Recording a 3-second sample…",
+  "testHelp": "Tests saved settings without stopping or flushing replay. Play each sample below; silence can also mean the application was quiet.",
+  "clearTest": "Delete test samples",
+  "warning": "Recording audio needs attention",
+  "overlap": "Audio is configured on multiple separate tracks. Check for unintended duplicates.",
+  "state": {
+    "disabled": "Disabled",
+    "unsupported": "Capture unsupported",
+    "disconnected": "Capture path disconnected",
+    "missing_game": "Waiting for a recorded game",
+    "missing_stream": "No matching playback stream",
+    "meter_unavailable": "Capture meter unavailable",
+    "quiet": "Connected but quiet for over 30 seconds; check mute/levels",
+    "muted": "Source muted or capture level is zero",
+    "active": "Audio detected",
+    "connected": "Connected; waiting for sound",
+    "captured": "Sound captured in sample"
+  }
+}
 }

@@ -158,6 +158,8 @@ class RecordingConfig:
     # gsr_audio_source. Example: ["default_output", "default_input",
     # "app:Discord"]. Empty = mix into a single track (the default).
     audio_tracks: list[str] = field(default_factory=list)
+    # Logical smart sources; legacy audio_tracks ids remain unchanged.
+    audio_sources: dict[str, dict] = field(default_factory=dict)
     # When separate tracks are configured, also record an extra track 1 that
     # mixes every source. Players, Discord, and share embeds play track 1, so
     # this keeps shared clips complete while the separates stay editable.
@@ -491,6 +493,15 @@ def normalize_overlay(cfg: "Config") -> None:
 
 
 def clamp_recording_limits(cfg: Config) -> None:
+    from .audio_router import validate_sources
+    sources=cfg.recording.audio_sources
+    if not isinstance(sources,dict):sources={}
+    valid={}
+    for key,value in sources.items():
+        try:validate_sources({key:value});valid[key]=value
+        except ValueError:
+            log.warning('Ignoring invalid smart audio source %s; no desktop fallback will be used',key)
+    cfg.recording.audio_sources=valid
     """Keep durations inside supported bounds regardless of where the config
     came from (hand-edited TOML, old versions, the settings API)."""
     rc = cfg.recording

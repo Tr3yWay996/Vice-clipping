@@ -1,6 +1,6 @@
 import {formatLengthLong} from './format';
 import {t} from './i18n';
-import type {Config} from './types';
+import type {Config,SmartAudioSource} from './types';
 
 /**
  * The settings form as plain data.
@@ -42,6 +42,7 @@ export interface Draft {
   notifyVolume: number;
   sounds: Record<SoundKey, string>;
   audioTracks: string[];
+  audioSources: Record<string,SmartAudioSource>;
   mixFirstTrack: boolean;
   wfMicStrategy: string;
 
@@ -159,6 +160,7 @@ export function draftFromConfig(config: Config): Draft {
           : {},
       ).map(([id, v]) => [id, Math.round(num(v, 1) * 100)]),
     ),
+    audioSources: (r.audio_sources && typeof r.audio_sources==='object' ? structuredClone(r.audio_sources):{}) as Record<string,SmartAudioSource>,
     mixFirstTrack: Boolean(r.audio_tracks_mix_first),
     wfMicStrategy: str(r.wf_microphone_strategy, 'prompt'),
 
@@ -253,6 +255,7 @@ export function patchFromDraft(draft: Draft): Record<string, Record<string, unkn
       wf_microphone_strategy: draft.wfMicStrategy,
       gsr_audio_source: draft.desktopSource || 'default_output',
       audio_tracks: [...draft.audioTracks],
+      audio_sources: structuredClone(draft.audioSources),
       audio_track_volumes: Object.fromEntries(
         draft.audioTracks.map(id => [id, (draft.audioTrackVolumes[id] ?? 100) / 100]),
       ),
@@ -381,7 +384,7 @@ export function trackPartKind(id: string): 'monitor' | 'input' | 'app' | 'unknow
  * track vanishes and the user is left with just their voice and nothing
  * anywhere saying why (#137). Work out what would go, so the UI can say it.
  */
-export function tracksLostWithoutDesktopAudio(tracks: string[]): {
+export function tracksLostWithoutDesktopAudio(tracks: string[], sources: Record<string,SmartAudioSource> = {}): {
   dropped: string[];
   trimmed: string[];
 } {
@@ -389,7 +392,7 @@ export function tracksLostWithoutDesktopAudio(tracks: string[]): {
   const trimmed: string[] = [];
   for (const id of tracks) {
     const parts = String(id).split('|').filter(Boolean);
-    const kept = parts.filter(p => trackPartKind(p) === 'input');
+    const kept = parts.filter(p => trackPartKind(sources[p]?.device ?? p) === 'input');
     if (!kept.length) dropped.push(id);
     else if (kept.length !== parts.length) trimmed.push(id);
   }

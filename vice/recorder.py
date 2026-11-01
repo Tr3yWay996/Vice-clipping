@@ -479,11 +479,16 @@ def _classify_gsr_source(source: str) -> str:
         return "monitor"
     if value == "default_input":
         return "input"
-    if value.startswith(("app:", "app-inverse:")):
+    if value.startswith(("app:", "app-inverse:", "rule:")) or value == "auto:game":
         return "app"
     if value.startswith("device:"):
         return "monitor" if value.endswith(".monitor") else "input"
     return "unknown"
+
+
+def _source_kind(rc, source):
+    settings = getattr(rc, "audio_sources", {}).get(source, {})
+    return _classify_gsr_source(settings.get("device", source))
 
 
 def _container(rc) -> str:
@@ -503,7 +508,14 @@ def _with_mic_and_mix(rc, tracks: list[str]) -> tuple[list[str], bool]:
     mixed = False
     if _captures_microphone(rc):
         mic = _gsr_mic_source(rc)
-        if not any(mic in track.split("|") for track in tracks):
+        if not any(
+            any(
+                part == mic
+                or getattr(rc, "audio_sources", {}).get(part, {}).get("device") == mic
+                for part in track.split("|")
+            )
+            for track in tracks
+        ):
             tracks.append(mic)
     if getattr(rc, "audio_tracks_mix_first", False) and len(tracks) > 1:
         mix: list[str] = []
@@ -511,11 +523,11 @@ def _with_mic_and_mix(rc, tracks: list[str]) -> tuple[list[str], bool]:
         # GSR rejects one track that contains both app: and app-inverse:
         # sources. A monitor already contains application audio, so it is
         # also the correct combined source and avoids recording it twice.
-        has_monitor = any(_classify_gsr_source(part) == "monitor" for part in parts)
+        has_monitor = any(_source_kind(rc, part) == "monitor" for part in parts)
         has_app = any(part.startswith("app:") for part in parts)
         has_inverse_app = any(part.startswith("app-inverse:") for part in parts)
         for part in parts:
-            if has_monitor and _classify_gsr_source(part) == "app":
+            if has_monitor and _source_kind(rc, part) == "app":
                 continue
             if part not in mix:
                 mix.append(part)
@@ -542,8 +554,18 @@ def _separate_track_layout(rc) -> tuple[list[str], bool]:
         for t in (getattr(rc, "audio_tracks", None) or [])
         if str(t).strip()
     ]
-    if not tracks or not _captures_desktop_audio(rc):
+    if not tracks:
         return [], False
+    if not _captures_desktop_audio(rc):
+        tracks = [
+            "|".join(
+                part for part in track.split("|") if _source_kind(rc, part) == "input"
+            )
+            for track in tracks
+        ]
+        tracks = [track for track in tracks if track]
+        if not tracks:
+            return [], False
     return _with_mic_and_mix(rc, tracks)
 
 
@@ -566,8 +588,7 @@ def _gsr_audio_args(rc, *, split_for_volume: bool = True) -> list[str]:
         kept: list[str] = []
         for track in tracks:
             parts = [
-                p for p in track.split("|")
-                if p and _classify_gsr_source(p) == "input"
+                p for p in track.split("|") if p and _source_kind(rc, p) == "input"
             ]
             if parts:
                 kept.append("|".join(parts))
@@ -578,14 +599,21 @@ def _gsr_audio_args(rc, *, split_for_volume: bool = True) -> list[str]:
                 "Capture desktop audio is off, so %d of your %d separate audio "
                 "tracks will not be recorded. Turn it back on under Settings → "
                 "Audio to keep them.",
-                len(tracks) - len(kept), len(tracks),
+                len(tracks) - len(kept),
+                len(tracks),
             )
         tracks = kept
     if tracks:
         tracks, _ = _with_mic_and_mix(rc, tracks)
         args: list[str] = []
         for track in tracks:
-            args += ["-a", track]
+            from .audio_graph import managed, sink_name
+
+            resolved = "|".join(
+                "device:" + sink_name(part) + ".monitor" if managed(part) else part
+                for part in track.split("|")
+            )
+            args += ["-a", resolved]
         return args
     if (
         split_for_volume
@@ -595,10 +623,23 @@ def _gsr_audio_args(rc, *, split_for_volume: bool = True) -> list[str]:
     ):
         # Record desktop and mic as separate tracks so the save-time audio
         # pass can balance and downmix them before mixing down.
-        desktop_source = (getattr(rc, "gsr_audio_source", "") or "default_output").strip() or "default_output"
+        desktop_source = (
+            getattr(rc, "gsr_audio_source", "") or "default_output"
+        ).strip() or "default_output"
         _warn_if_desktop_source_is_mic(desktop_source)
+        from .audio_graph import managed, sink_name
+
+        if managed(desktop_source):
+            desktop_source = "device:" + sink_name(desktop_source) + ".monitor"
         return ["-a", desktop_source, "-a", _gsr_mic_source(rc)]
     merged = _gsr_audio_input(rc)
+    if merged:
+        from .audio_graph import managed, sink_name
+
+        merged = "|".join(
+            "device:" + sink_name(part) + ".monitor" if managed(part) else part
+            for part in merged.split("|")
+        )
     return ["-a", merged] if merged else []
 
 
@@ -1279,8 +1320,18 @@ async def _spawn_capture(cmd: list[str], stderr) -> asyncio.subprocess.Process:
     until the daemon hit EMFILE and stopped clipping (#129). Own group means
     the helper can be reaped with the recorder.
     """
+    from .audio_graph import capture_environment
+
+    smart = any("vice_capture_" in arg for arg in cmd)
+    if smart and _is_flatpak_capture(cmd):
+        cmd = list(cmd)
+        cmd.insert(
+            cmd.index("run") + 1,
+            "--env=PULSE_PROP=" + capture_environment()["PULSE_PROP"],
+        )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
+        **({"env": capture_environment()} if smart else {}),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=stderr,
         start_new_session=True,
@@ -1680,6 +1731,11 @@ class Recorder(ABC):
         Session recording uses ffmpeg regardless of the replay-buffer backend
         so that we get a single contiguous output file to stamp highlights into.
         """
+        from .audio_graph import managed
+        rc=self.cfg.recording
+        if self.name!='gpu-screen-recorder' and any(managed(source) and (rc.capture_audio or _source_kind(rc,source)=='input') for source in (rc.audio_tracks or [rc.gsr_audio_source])):
+            log.error('Smart audio session capture is unsupported by this backend; no desktop fallback was selected')
+            return None
         if self._session_active:
             log.warning("Session already active")
             return None
@@ -1761,6 +1817,7 @@ class Recorder(ABC):
 
         if self.cfg.recording.apply_watermark:
             await _apply_watermark(path)
+        await _apply_track_titles(path, self.cfg.recording)
         log.info("Session clip saved: %s", path)
         self._emit(path)
         return path
@@ -1769,11 +1826,27 @@ class Recorder(ABC):
         """Build a direct-to-file ffmpeg command for session recording."""
         rc = self.cfg.recording
         encoder = choose_encoder(rc.encoder)
+        from .audio_graph import managed
+
+        if any(
+            managed(source)
+            and (rc.capture_audio or _source_kind(rc, source) == "input")
+            for source in (rc.audio_tracks or [rc.gsr_audio_source])
+        ):
+            # Keep the same private devices for sessions on X11 as on Wayland.
+            # The generic FFmpeg session fallback does not express this layout.
+            if self.name == "gpu-screen-recorder" and gsr_source() is not None:
+                return self._gsr_session_cmd(
+                    out_path, rc, self.display_override, self.window_override
+                )
+            return None
 
         if _is_wayland():
             # Prefer gpu-screen-recorder on Wayland (especially smoother on NVIDIA).
             if gsr_source() is not None:
-                return self._gsr_session_cmd(out_path, rc, self.display_override, self.window_override)
+                return self._gsr_session_cmd(
+                    out_path, rc, self.display_override, self.window_override
+                )
 
             # Fallback: wf-recorder direct-to-file on Wayland.
             if _has("wf-recorder"):
@@ -1793,11 +1866,15 @@ class Recorder(ABC):
 
             # Last resort on XWayland sessions.
             if os.environ.get("DISPLAY") and _has("ffmpeg"):
-                return self._ffmpeg_session_cmd(out_path, encoder, rc, self.display_override)
+                return self._ffmpeg_session_cmd(
+                    out_path, encoder, rc, self.display_override
+                )
             return None
 
         if _is_x11() and _has("ffmpeg"):
-            return self._ffmpeg_session_cmd(out_path, encoder, rc, self.display_override)
+            return self._ffmpeg_session_cmd(
+                out_path, encoder, rc, self.display_override
+            )
 
         return None
 
@@ -2404,6 +2481,9 @@ def _track_volumes(rc, layout: list[str], mixed: bool) -> list[float]:
     for i, track in enumerate(layout):
         if mixed and i == 0:
             out.append(1.0)
+        elif track == "auto:game" or track.startswith("rule:"):
+            # Smart-source gain is applied on its private capture monitor live.
+            out.append(1.0)
         elif track not in listed:
             # The microphone added because capture_microphone is on.
             out.append(_mic_volume(rc))
@@ -2445,15 +2525,20 @@ _AUDIO_ENCODERS = {"opus": "libopus", "aac": "aac", "mp3": "libmp3lame", "flac":
 
 
 def _track_volume_cmd(
-    path: Path, tmp: Path, layout: list[str], mixed: bool,
-    volumes: list[float], codecs: list[tuple[str, int]],
+    path: Path,
+    tmp: Path,
+    layout: list[str],
+    mixed: bool,
+    volumes: list[float],
+    codecs: list[tuple[str, int]],
 ) -> list[str]:
     """Re-level the separate tracks in place of the originals and, when the
     first track is the combined one, rebuild it from the re-levelled tracks
     so what players and Discord play is balanced too (#251). Video and any
     untouched track are stream-copied."""
-    changed = [abs(v - 1.0) > 0.01 and not (mixed and i == 0)
-               for i, v in enumerate(volumes)]
+    changed = [
+        abs(v - 1.0) > 0.01 and not (mixed and i == 0) for i, v in enumerate(volumes)
+    ]
     members: set[int] = set()
     if mixed and any(changed):
         # The combined track leaves out app-only tracks when a monitor is
@@ -2462,10 +2547,26 @@ def _track_volume_cmd(
         parts = [p for t in layout[1:] for p in t.split("|") if p]
         has_monitor = any(_classify_gsr_source(p) == "monitor" for p in parts)
         members = {
-            i for i in range(1, len(layout))
-            if not (has_monitor and all(
-                _classify_gsr_source(p) == "app" for p in layout[i].split("|") if p))
+            i
+            for i in range(1, len(layout))
+            if not (
+                has_monitor
+                and all(
+                    _classify_gsr_source(p) == "app" for p in layout[i].split("|") if p
+                )
+            )
         }
+        if any(
+            part == "auto:game" or part.startswith("rule:")
+            for track in layout
+            for part in track.split("|")
+        ):
+            included = set(layout[0].split("|"))
+            members = {
+                i
+                for i in range(1, len(layout))
+                if any(part in included for part in layout[i].split("|"))
+            }
         if not any(changed[i] for i in members):
             members = set()
     graph: list[str] = []
@@ -2474,7 +2575,9 @@ def _track_volume_cmd(
         stereo = f"[0:a:{i}]aformat=channel_layouts=stereo"
         if changed[i]:
             outs = f"asplit=2[v{i}][m{i}]" if i in members else ""
-            graph.append(f"{stereo},volume={volume:g}" + (f",{outs}" if outs else f"[v{i}]"))
+            graph.append(
+                f"{stereo},volume={volume:g}" + (f",{outs}" if outs else f"[v{i}]")
+            )
             labels[i] = f"v{i}"
         elif i in members:
             graph.append(f"{stereo}[m{i}]")
@@ -2482,8 +2585,18 @@ def _track_volume_cmd(
         inputs = "".join(f"[m{i}]" for i in sorted(members))
         graph.append(f"{inputs}amix=inputs={len(members)}:normalize=0[mix]")
         labels[0] = "mix"
-    args = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path),
-            "-filter_complex", ";".join(graph), "-map", "0:v"]
+    args = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(path),
+        "-filter_complex",
+        ";".join(graph),
+        "-map",
+        "0:v",
+    ]
     for i in range(len(layout)):
         args += ["-map", f"[{labels[i]}]" if i in labels else f"0:a:{i}"]
     args += ["-c:v", "copy"]
@@ -2541,6 +2654,59 @@ async def _apply_track_volumes(path: Path, rc) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # gpu-screen-recorder backend
 # ──────────────────────────────────────────────────────────────────────────────
+
+async def _apply_track_titles(path: Path, rc) -> None:
+    layout, mixed = _separate_track_layout(rc)
+    if not layout or not getattr(rc, "audio_sources", {}):
+        return
+    titles = [
+        (
+            rc.audio_sources.get(source, {}).get("name")
+            or ("Recorded Game Audio" if source == "auto:game" else source)
+        )
+        for source in layout
+    ]
+    if mixed:
+        titles[0] = "Combined audio"
+    codecs = await _audio_stream_codecs(path)
+    if len(codecs) != len(titles):
+        return
+    tmp = path.with_name(path.stem + ".audio-titles" + path.suffix)
+    args = ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0", "-c", "copy"]
+    for index, title in enumerate(titles):
+        args += [
+            f"-metadata:s:a:{index}",
+            f"title={title}",
+            f"-metadata:s:a:{index}",
+            f"handler_name={title}",
+        ]
+    stat = path.stat()
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            "-y",
+            str(tmp),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=60)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            if proc.returncode is None:
+                proc.kill()
+            await proc.communicate()
+            raise
+        if proc.returncode == 0:
+            os.utime(tmp, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+            tmp.replace(path)
+    except (OSError, asyncio.TimeoutError):
+        log.warning(
+            "Could not update audio track titles; keeping captured media", exc_info=True
+        )
+    finally:
+        tmp.unlink(missing_ok=True)
+
 
 class GSRRecorder(Recorder):
     """
@@ -2644,7 +2810,29 @@ class GSRRecorder(Recorder):
         self._proc = None
         return detail
 
+    async def _prepare_smart_audio(self):
+        from .audio_graph import managed
+
+        rc = self.cfg.recording
+        sources = rc.audio_tracks or [rc.gsr_audio_source]
+        if any(
+            managed(source)
+            and (rc.capture_audio or _source_kind(rc, source) == "input")
+            for source in sources
+        ):
+            router = getattr(self, "audio_router", None)
+            if router is None:
+                raise RuntimeError(
+                    "Smart audio requires the Vice audio routing service; desktop fallback was not selected."
+                )
+            await router.ensure_tracks()
+
+    async def start_session(self):
+        await self._prepare_smart_audio()
+        return await super().start_session()
+
     async def start(self) -> None:
+        await self._prepare_smart_audio()
         self._running = True
         self.cpu_fallback = False
         self.cpu_fallback_reason = None
@@ -2825,6 +3013,7 @@ class GSRRecorder(Recorder):
                 trimmed = await _trim_to_last_n_seconds(newest, clip_duration)
                 await _apply_volume_mix(trimmed, self.cfg.recording)
                 await _apply_track_volumes(trimmed, self.cfg.recording)
+                await _apply_track_titles(trimmed, self.cfg.recording)
                 if self.cfg.recording.apply_watermark:
                     await _apply_watermark(trimmed)
                 log.info("Clip saved: %s", trimmed)
@@ -2933,6 +3122,10 @@ class SegmentRecorder(Recorder):
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
+        from .audio_graph import managed
+        rc=self.cfg.recording
+        if any(managed(source) and (rc.capture_audio or _source_kind(rc,source)=='input') for source in (rc.audio_tracks or [rc.gsr_audio_source])):
+            raise RuntimeError('Smart application tracks require GPU Screen Recorder. Choose an explicit supported device source or change backend; no desktop fallback was selected.')
         log.info(
             "Starting segment recorder (backend=%s, encoder=%s)",
             "wf-recorder" if self._use_wf else "ffmpeg-x11grab",

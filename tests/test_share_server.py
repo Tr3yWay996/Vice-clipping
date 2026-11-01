@@ -122,6 +122,16 @@ class ShareServerSecurityTests(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
         await self.server.stop()
 
+    async def test_smart_audio_diagnostics_and_samples_are_local_only(self):
+        router=mock.Mock()
+        router.snapshot.return_value={'supported':False,'tracks':[],'applications':[]}
+        self.server.audio_router=router
+        async with self.client.get(self.server.local_base_url()+'/api/audio/state') as response:
+            self.assertEqual(response.status,200)
+        for route in ('state','tests/private/0','icons/273'):
+            async with self.client.get(f'http://127.0.0.1:{self.public_port}/api/audio/'+route) as response:
+                self.assertEqual(response.status,404)
+
     async def test_local_control_server_exposes_ui_api_and_ws(self) -> None:
         local_base = self.server.local_base_url()
         self.assertEqual(local_base, f"http://127.0.0.1:{self.local_port}")
@@ -1714,7 +1724,8 @@ class ShareServerDisplayApiTests(unittest.IsolatedAsyncioTestCase):
 
         payload = json.loads(response.text)
         self.assertEqual(payload["selected"], "app:Firefox")
-        self.assertEqual(payload["sources"][0]["id"], "app:Firefox")
+        self.assertEqual(payload["sources"][0]["id"], "auto:game")
+        self.assertTrue(any(source["id"]=="app:Firefox" for source in payload["sources"]))
 
 
 @unittest.skipUnless(ShareServer is not None, "aiohttp is not installed")

@@ -32,6 +32,10 @@ pkgbase = vice-clipper
 	depends = xdotool
 	depends = xorg-xprop
 	depends = wmctrl
+	optdepends = wireplumber>=0.5: private capture source isolation
+	optdepends = pipewire: smart game audio routing
+	optdepends = pipewire-pulse: private audio capture monitors
+	optdepends = libpulse: audio meters and capture diagnostics
 	optdepends = wf-recorder: Wayland fallback recording backend
 	optdepends = kdotool: game detection on KDE Plasma Wayland
 	optdepends = python-gobject: keyboard overlay

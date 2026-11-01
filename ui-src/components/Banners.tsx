@@ -17,12 +17,17 @@ export function Banners() {
   const showing = (id: BannerId) => !dismissed.includes(id);
   const dismiss = (banner: BannerId) => () => dispatch({type: 'dismiss', banner});
 
+  const audioWarnings=status.audio?.tracks.filter(track=>track.enabled && ['missing_game','missing_stream','disconnected','unsupported','quiet','muted','meter_unavailable'].includes(track.state)) ?? [];
   const recorderDown = status.ready === false && Boolean(status.recorder_error);
 
   return (
     <div className="banners">
       {/* Not dismissible: the daemon is up but nothing is being recorded, so
           the window exists mainly to say this and keep Settings reachable. */}
+      {audioWarnings.length ? <Banner tone="warning"><strong>{t('audioMixer.warning')}</strong>
+        <span>{audioWarnings.map(track=>`${track.name}: ${t(`audioMixer.state.${track.state}`)}`).join(' · ')}</span>
+        <button type="button" className="btn btn-quiet btn-sm" onClick={()=>dispatch({type:'setView',view:'settings'})}>{t('settings.secAudio')}</button>
+      </Banner>:null}
       {recorderDown ? (
         <Banner tone="error">
           <strong>{t('banners.notRecording')}</strong>

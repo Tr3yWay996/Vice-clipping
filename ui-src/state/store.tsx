@@ -341,6 +341,8 @@ function reduceWs(state: State, msg: WsMessage): State {
       return withTrash(state,msg);
     case 'games_changed':
       return withGames(state,msg.games);
+    case 'audio_state':
+      return {...state,status:{...state.status,audio:msg.audio}};
     case 'jobs_changed':
       return {...state, jobs: msg.jobs, jobsLoaded: true};
     case 'clip_updated':

@@ -1282,4 +1282,76 @@
       "prepare": "Préparer le partage"
     }
   }
+,
+  "audioMixer": {
+    "manage": "Gérer cette source",
+  "title": "Mixeur audio",
+  "help": "Choisis une fois la source automatique du jeu, ou ajoute des pistes persistantes par application et périphérique. Les vumètres des applications montrent des écoutes isolées ; ceux des pistes montrent le moniteur de capture configuré.",
+  "auto": "Audio du jeu enregistré · Automatique",
+  "autoHelp": "Suit le jeu enregistré et garde son identité pendant un Alt+Tab. Ne remplace jamais sa source par le son du bureau.",
+  "unavailable": "La capture intelligente nécessite GPU Screen Recorder, PipeWire, WirePlumber 0.5+, pw-dump, pw-cli, pw-link et pactl. Choisissez explicitement la sortie du bureau ou une entrée si vous souhaitez une autre source.",
+  "search": "Rechercher des sources audio",
+  "filterLabel": "Catégorie de source",
+  "filter": {
+    "all": "Toutes les sources",
+    "applications": "Applications",
+    "devices": "Entrées et sorties"
+  },
+  "noMeter": "Vumètre indisponible",
+  "unknownOutput": "Sortie non indiquée",
+  "running": "Active",
+  "inactive": "Inactive",
+  "onTracks": "Configurée sur la ou les pistes {tracks}",
+  "input": "Microphone / périphérique d’entrée",
+  "output": "Sortie bureau / périphérique virtuel",
+  "newSource": "Audio d’application",
+  "createRule": "Créer une règle d’application",
+  "saveHelp": "Enregistre les réglages pour appliquer les changements. Ajouter ou retirer une piste modifie le format et redémarre le tampon ; modifier les règles intelligentes, noms, activations ou niveaux ne le redémarre pas.",
+  "track": "Piste {number}",
+  "enabled": "Activée",
+  "name": "Nom de la piste",
+  "captureConnected": "Enregistreur connecté à ce moniteur de capture",
+  "ambiguous": "Cette source correspond à plusieurs applications différentes. Affine les règles si ce n’est pas voulu.",
+  "ruleError": "La règle de correspondance est invalide ou a dépassé sa limite de temps.",
+  "fieldLabel": "Champ de correspondance",
+  "field": {
+    "executable": "Nom de l’exécutable",
+    "executable_path": "Chemin de l’exécutable",
+    "name": "Nom de l’application",
+    "application_id": "Identifiant de l’application",
+    "node_name": "Nom du nœud PipeWire"
+  },
+  "modeLabel": "Mode de correspondance",
+  "mode": {
+    "exact": "Exact (sans tenir compte de la casse)",
+    "contains": "Contient (sans tenir compte de la casse)",
+    "regex": "Expression régulière"
+  },
+  "pattern": "Texte à rechercher",
+  "addRule": "Ajouter une règle",
+  "rulesHelp": "Les règles sont alternatives : toute règle correspondante inclut le flux. Toutes les instances correspondantes sont incluses.",
+  "gameRulesHelp": "Laisse les règles vides pour identifier automatiquement le jeu. Des règles explicites remplacent la correspondance automatique sur cette piste.",
+  "matches": "Correspondances actuelles : {names}",
+  "none": "Aucune",
+  "legacyHelp": "Cette source GSR directe existait déjà. Modifier son activation la convertit en source gérée, à la même position de piste.",
+  "test": "Tester la capture audio",
+  "testing": "Enregistrement d’un échantillon de 3 secondes…",
+  "testHelp": "Teste les réglages enregistrés sans arrêter ni vider le tampon. Écoute chaque échantillon ci-dessous ; le silence peut aussi signifier que l’application était silencieuse.",
+  "clearTest": "Supprimer les échantillons",
+  "warning": "Vérifie le son de l’enregistrement",
+  "overlap": "Le son est configuré sur plusieurs pistes séparées. Vérifie que ces doublons sont voulus.",
+  "state": {
+    "disabled": "Désactivée",
+    "unsupported": "Capture non prise en charge",
+    "disconnected": "Circuit de capture déconnecté",
+    "missing_game": "En attente d’un jeu enregistré",
+    "missing_stream": "Aucun flux de lecture correspondant",
+    "meter_unavailable": "Vumètre de capture indisponible",
+    "quiet": "Connectée mais silencieuse depuis plus de 30 secondes ; vérifie la sourdine et les niveaux",
+    "muted": "Source en sourdine ou niveau de capture nul",
+    "active": "Son détecté",
+    "connected": "Connectée ; en attente de son",
+    "captured": "Son capturé dans l’échantillon"
+  }
+}
 }

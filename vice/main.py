@@ -143,6 +143,9 @@ class ViceDaemon:
         self._game_task = None
         self._headless_trash_task = None
         self.recorder = create_recorder(self.cfg)
+        from .audio_router import AudioRouter
+        self.audio_router = AudioRouter(self.cfg,game_target=self._audio_game_target,publish=self._publish_audio,
+                                       recorder_state=lambda:self._ready and isinstance(self.recorder,GSRRecorder))
         self.hotkeys  = HotkeyListener()
         self.share:   Optional[ShareServer] = None
         # Keyboard visualiser (#209): the ring holds the overlay's keys for
@@ -229,6 +232,7 @@ class ViceDaemon:
             self.share = ShareServer(self.cfg, games=self.games)
             self.share.trigger_clip_cb = self._handle_clip_hotkey
             self.share.check_update_cb = lambda: self.run_update_check(force=True)
+            self.share.audio_router = self.audio_router
             self.share.get_status_cb   = self._get_status
             self.share.apply_config_cb = self._apply_live_config
             self.share.key_overlay_move_cb = self.key_overlay.set_moving
@@ -244,6 +248,7 @@ class ViceDaemon:
         # Wire the recorder's callbacks. Must also run when a settings change
         # swaps in a new recorder, or game tagging and auto playlists silently
         # stop working.
+        await self.audio_router.start()
         self._wire_recorder(self.recorder)
 
         # Hotkeys
@@ -272,6 +277,7 @@ class ViceDaemon:
                 await self.recorder.stop()
             except Exception as exc:
                 log.debug("Recorder did not stop cleanly: %s", exc)
+            await self.audio_router.close()
             if self.share:
                 try:
                     await self.share.stop()
@@ -433,6 +439,7 @@ class ViceDaemon:
         recorder, so moving one must not restart it and empty the buffer."""
         recording = asdict(self.cfg.recording)
         recording.pop("audio_track_volumes", None)
+        recording.pop("audio_sources", None)
         return json.dumps(recording, sort_keys=True)
 
     def _clips_in_library(self) -> int:
@@ -684,6 +691,8 @@ class ViceDaemon:
         """Attach the daemon's callbacks to a recorder. Fires for the initial
         recorder and for every replacement built on a config change, so game
         filename tagging and auto playlists survive settings changes."""
+        recorder.audio_router = getattr(self,'audio_router',None)
+        if recorder.audio_router:recorder.audio_router.backend_supported=isinstance(recorder,GSRRecorder)
         recorder.on_clip_saved(self._on_clip_saved)
         # Tag clip filenames with the focused game (curated list, same
         # detection as Discord Rich Presence); also feeds the auto playlists.
@@ -959,6 +968,7 @@ class ViceDaemon:
     async def _apply_live_config(self) -> None:
         """Apply config changes and restart recorder when recording settings changed."""
         async with self._config_apply_lock:
+            if hasattr(self,'audio_router'):self.audio_router.changed.set()
             self._bind_hotkeys()
             # Before the restart check, so turning follow-the-pointer off drops
             # the override and the recorder goes back to the saved display.
@@ -1280,6 +1290,75 @@ class ViceDaemon:
         win['_vice_game_identity'] = game
         return display_name(game) if game else None
 
+    async def _publish_audio(self, message):
+        if self.share:
+            await self.share.broadcast(message)
+
+    def _audio_game_target(self):
+        from .active_window import (
+            get_active_window,
+            process_identity,
+            read_steam_app_id,
+        )
+        import psutil
+        from .audio_target import native_game
+
+        pin = getattr(self, "_audio_game_pin", None)
+        window = get_active_window()
+        if window and (
+            not self._window_capture_id
+            or window.get("window_id") == self._window_capture_id
+        ):
+            pid = window.get("pid", 0)
+            identity = process_identity(pid)
+            executable = identity.get("executable", "")
+            # A Steam identity or actual recognized/captured game, never mere focus.
+            blocked = executable.casefold() in {
+                "steam",
+                "steamwebhelper",
+                "zen",
+                "firefox",
+                "chrome",
+                "chromium",
+                "discord",
+                "plasmashell",
+            }
+            if (
+                pid
+                and not blocked
+                and (
+                    read_steam_app_id(pid)
+                    or native_game(window, identity)
+                    or self._resolve_game(window)
+                    or self._window_capture_id
+                )
+            ):
+                try:
+                    pin = {
+                        "pid": pid,
+                        "created": psutil.Process(pid).create_time(),
+                        "executable": executable,
+                        "executable_path": identity.get("executable_path", ""),
+                        "window_id": window.get("window_id"),
+                    }
+                except psutil.Error:
+                    pass
+        if not pin:
+            return None
+        pin = dict(pin)
+        pin["pids"] = []
+        try:
+            process = psutil.Process(pin["pid"])
+            if process.create_time() == pin["created"]:
+                pin["pids"] = [
+                    process.pid,
+                    *[child.pid for child in process.children(recursive=True)],
+                ]
+        except psutil.Error:
+            pass
+        self._audio_game_pin = pin
+        return pin
+
     async def _game_observation_loop(self):
         from .active_window import get_active_window
         while True:
@@ -1396,6 +1475,7 @@ class ViceDaemon:
 
     def _get_status(self) -> dict:
         return {
+            "audio": self.audio_router.snapshot() if hasattr(self,'audio_router') else None,
             "ready":          self._ready,
             "recording":      self._ready,
             "recorder_error": self._recorder_error,
@@ -1537,6 +1617,7 @@ class ViceDaemon:
             await self.hotkeys.stop()
         except Exception as exc:
             log.warning("Hotkey stop failed during shutdown: %s", exc)
+        if hasattr(self,'audio_router'):await self.audio_router.close()
 
         if self.share:
             try:
