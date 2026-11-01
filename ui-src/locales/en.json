@@ -1436,7 +1436,7 @@
     "muteTrack": "Mute Track",
     "unmuteTrack": "Unmute Track",
     "soloTrack": "Solo Track",
-    "unsoloTrack": "Clear Solo",
+    "unsoloTrack": "Unsolo Track",
     "resetVolume": "Reset Volume",
     "selectContents": "Select Track Contents",
     "muteItem": "Mute Item",

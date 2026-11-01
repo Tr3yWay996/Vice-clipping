@@ -2168,7 +2168,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
                 soloed.has(trackId) ? 'audioWorkflow.unsoloTrack' : 'audioWorkflow.soloTrack',
               ),
               kbd: 'Shift+S',
-              fn: () => soloTrack(trackId),
+              fn: () => soloTrack(trackId, soloed.has(trackId)),
             },
             {label: translate('audioWorkflow.resetVolume'), fn: () => setTrackVolume(trackId, 1)},
           ]

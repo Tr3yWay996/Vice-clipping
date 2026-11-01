@@ -513,3 +513,9 @@ it('reuses a related nonoverlapping source lane across recordings while preservi
  expect(engine.project()!.tracks.filter(t=>t.type==='audio')).toHaveLength(2);expect(engine.project()!.tracks.find(t=>t.id===first.trackId)!.label).toBe('My chosen game label');
  expect(engine.project()!.items.filter(i=>i.kind==='audio'&&i.audioStream===0).every(i=>i.trackId===first.trackId)).toBe(true);
 });
+it('unsolos only the clicked track from a multiple-solo context menu',()=>{
+ engine.addTrack('audio');const other=engine.project()!.tracks[engine.project()!.tracks.length-1].id;
+ engine.soloTrack('A1');engine.soloTrack(other,true);root.querySelector('[data-rail=A1]')!.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true}));
+ [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button=>button.textContent?.includes('Unsolo Track'))!.click();
+ expect(root.querySelector('[data-track-solo=A1]')?.getAttribute('aria-pressed')).toBe('false');expect(root.querySelector(`[data-track-solo="${other}"]`)?.getAttribute('aria-pressed')).toBe('true');
+});
