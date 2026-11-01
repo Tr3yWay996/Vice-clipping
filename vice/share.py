@@ -2846,6 +2846,7 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
                                    accent=accent,
                                    text_dir=work,
                                    discord_optimized=discord_optimized,
+                                   separate_audio=body.get("separate_audio") is True,
                                    key_burn=key_burn)
         except DiscordTooLarge as exc:
             shutil.rmtree(work, ignore_errors=True)

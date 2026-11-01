@@ -260,3 +260,256 @@ describe('explicit editor seeking and authoritative media clocks',()=>{
   current().click();expect(engine.snapshot().playing).toBe(false);expect(JSON.stringify(engine.project())).toBe(original);
  });
 });
+
+describe('named audio tracks and monitoring', () => {
+  function twoTracks() {
+    engine.addTrack('audio');
+    const track = engine.project()!.tracks[engine.project()!.tracks.length - 1];
+    track.label = 'Discord';
+    engine
+      .project()!
+      .items.push({
+        ...engine.project()!.items.find((i) => i.id === 'a')!,
+        id: 'b',
+        trackId: track.id,
+        audioStream: 1,
+        volume: 0.8,
+      });
+    engine.seek(8);
+    for (const media of [...root.querySelectorAll('video'), ...audioMedia]) {
+      Object.defineProperty(media, 'readyState', {value: 4, configurable: true});
+      media.dispatchEvent(new Event('loadedmetadata'));
+    }
+    engine.setPlaying(true);
+    return track;
+  }
+  it('inherits metadata without reusing unrelated named lanes and keeps all separate streams audible', () => {
+    const p = engine.project()!;
+    p.items = p.items.filter((i) => i.id !== 'a');
+    p.items[0].muted = false;
+    p.tracks.find((t) => t.id === 'A1')!.label = 'Unrelated Music';
+    previewClips = [
+      {
+        ...clip,
+        audio_tracks: [
+          {index: 0, title: 'Game Audio'},
+          {index: 1, title: 'My USB Microphone'},
+        ],
+      } as Clip,
+    ];
+    engine.detachAudio();
+    const audio = engine.project()!.items.filter((i) => i.kind === 'audio');
+    expect(audio).toHaveLength(2);
+    expect(audio.every((i) => !i.muted)).toBe(true);
+    expect(
+      audio.map((i) => engine.project()!.tracks.find((t) => t.id === i.trackId)!.label),
+    ).toEqual(['Game Audio', 'My USB Microphone']);
+    expect(audio.every((i) => i.trackId !== 'A1')).toBe(true);
+    expect(engine.project()!.items.find((i) => i.id === 'v')!.muted).toBe(true);
+  });
+  it('avoids combined-mix doubling and retains exact duplicate names with distinct IDs', () => {
+    engine.project()!.items = engine.project()!.items.filter((i) => i.id !== 'a');
+    engine.project()!.items[0].muted = false;
+    previewClips = [
+      {
+        ...clip,
+        audio_tracks: [
+          {index: 0, title: 'Combined audio'},
+          {index: 1, title: 'My Audio'},
+          {index: 2, title: 'My Audio'},
+        ],
+      } as Clip,
+    ];
+    engine.detachAudio();
+    const audio = engine.project()!.items.filter((i) => i.kind === 'audio');
+    expect(
+      audio.map((i) => engine.project()!.tracks.find((t) => t.id === i.trackId)!.muted),
+    ).toEqual([true, false, false]);
+    expect(new Set(audio.map((i) => i.trackId)).size).toBe(3);
+    expect(
+      audio.slice(1).map((i) => engine.project()!.tracks.find((t) => t.id === i.trackId)!.label),
+    ).toEqual(['My Audio', 'My Audio']);
+  });
+  it('persists track names, mute and gain without persisting solo or changing IDs', async () => {
+    const originalId = 'A1';
+    engine.renameTrack(originalId, 'My complete microphone name');
+    engine.muteTrack(originalId);
+    engine.setTrackVolume(originalId, 0.4);
+    engine.soloTrack(originalId);
+    await engine.saveNow();
+    const calls = vi.mocked(fetch).mock.calls;
+    const save = calls.filter(([, init]) => init?.method === 'POST').pop()!;
+    const saved = JSON.parse(String(save[1]!.body));
+    expect(saved.tracks.find((t: {id: string}) => t.id === originalId)).toMatchObject({
+      label: 'My complete microphone name',
+      muted: true,
+      volume: 0.4,
+    });
+    expect(JSON.stringify(saved)).not.toContain('solo');
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({project: saved}),
+    } as Response);
+    await engine.load();
+    engine.setClips(previewClips);
+    expect(engine.project()!.tracks.find((t) => t.id === originalId)!.label).toBe(
+      'My complete microphone name',
+    );
+    expect(root.querySelector('[data-track-solo=A1]')?.getAttribute('aria-pressed')).toBe('false');
+  });
+  it('switches solo, supports multiple solo tracks, and restores ordinary playback', () => {
+    const other = twoTracks();
+    const original = JSON.stringify(engine.project());
+    engine.soloTrack('A1');
+    expect(audioMedia[0].paused).toBe(false);
+    expect(audioMedia[1].paused).toBe(true);
+    engine.soloTrack(other.id);
+    expect(audioMedia[0].paused).toBe(true);
+    expect(audioMedia[1].paused).toBe(false);
+    engine.soloTrack('A1', true);
+    expect(audioMedia.every((a) => !a.paused)).toBe(true);
+    engine.soloTrack(other.id, true);
+    expect(audioMedia[0].paused).toBe(false);
+    expect(audioMedia[1].paused).toBe(true);
+    engine.soloTrack('A1');
+    expect(audioMedia.every((a) => !a.paused)).toBe(true);
+    expect(JSON.stringify(engine.project())).toBe(original);
+  });
+  it('keeps track mute separate from item mute and volume while preview continues', () => {
+    twoTracks();
+    engine.setTrackVolume('A1', 0.5);
+    expect(audioMedia[0].volume).toBeCloseTo(0.3);
+    expect(engine.snapshot().playing).toBe(true);
+    engine.muteTrack('A1');
+    expect(audioMedia[0].paused).toBe(true);
+    expect(audioMedia[1].paused).toBe(false);
+    expect(engine.project()!.items.find((i) => i.id === 'a')!.muted).toBeUndefined();
+    engine.seek(9);
+    engine.muteTrack('A1');
+    expect(audioMedia[0].paused).toBe(false);
+    expect(audioMedia[0].volume).toBeCloseTo(0.3);
+    expect(audioMedia[0].currentTime).toBe(6);
+  });
+  it('renames via F2 and double click while text fields retain their shortcuts', () => {
+    engine.selectTrack('A1');
+    key('F2');
+    const input = root.querySelector<HTMLInputElement>('.ed-track-name')!;
+    expect(input).not.toBeNull();
+    input.value = 'Microphone personnalisé';
+    key('m', {shiftKey: true}, input);
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.muted).toBeUndefined();
+    key('Enter', {}, input);
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.label).toBe(
+      'Microphone personnalisé',
+    );
+    root
+      .querySelector('[data-rail=A1]')!
+      .dispatchEvent(new MouseEvent('dblclick', {bubbles: true}));
+    expect(root.querySelector('.ed-track-name')).not.toBeNull();
+    key('Escape', {}, root.querySelector('.ed-track-name')!);
+    key('M', {shiftKey: true});
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.muted).toBe(true);
+    key('S', {shiftKey: true});
+    expect(root.querySelector('[data-track-solo=A1]')?.getAttribute('aria-pressed')).toBe('true');
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.muted).toBeUndefined();
+    key('y', {ctrlKey: true});
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.muted).toBe(true);
+  });
+  it('offers relevant audio menus with accessible dismissal and undoable item mute', () => {
+    root
+      .querySelector('[data-item=a]')!
+      .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true}));
+    const menu = document.querySelector('[role=menu]')!;
+    expect(menu.textContent).toContain('Mute Item');
+    expect(menu.textContent).not.toContain('Detach');
+    const mute = [...menu.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      b.textContent?.includes('Mute Item'),
+    )!;
+    mute.click();
+    expect(engine.project()!.items.find((i) => i.id === 'a')!.muted).toBe(true);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items.find((i) => i.id === 'a')!.muted).toBeUndefined();
+    root
+      .querySelector('[data-rail=A1]')!
+      .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true}));
+    expect(document.querySelector('[role=menu]')!.textContent).toContain('Rename Track');
+    key('Escape', {}, document.querySelector('[role=menuitem]')!);
+    expect(document.querySelector('[role=menu]')).toBeNull();
+  });
+  it('selects track contents for group copy/delete and preserves names and relative timing on paste', () => {
+    engine
+      .project()!
+      .items.push({
+        ...engine.project()!.items.find((i) => i.id === 'a')!,
+        id: 'later',
+        start: 16,
+        dur: 2,
+      });
+    engine.setClips(previewClips);
+    root
+      .querySelector('[data-rail=A1]')!
+      .dispatchEvent(new MouseEvent('contextmenu', {bubbles: true}));
+    [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')]
+      .find((b) => b.textContent?.includes('Select Track Contents'))!
+      .click();
+    expect(root.querySelectorAll('.ed-item.selected')).toHaveLength(2);
+    key('c', {ctrlKey: true});
+    key('Delete');
+    expect(engine.project()!.items.some((i) => i.kind === 'audio')).toBe(false);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items.filter((i) => i.kind === 'audio')).toHaveLength(2);
+    engine.seek(30);
+    key('v', {ctrlKey: true});
+    const pasted = engine
+      .project()!
+      .items.filter((i) => i.kind === 'audio' && !['a', 'later'].includes(i.id));
+    expect(pasted.map((i) => i.start)).toEqual([30, 41]);
+  });
+  it('groups slider changes into one undo operation without rebuilding media', () => {
+    twoTracks();
+    const media = audioMedia[0];
+    const input = root.querySelector<HTMLInputElement>('[data-track-volume=A1]')!;
+    input.value = '40';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.value = '30';
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+    expect(audioMedia[0]).toBe(media);
+    expect(media.volume).toBeCloseTo(0.18);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.tracks.find((t) => t.id === 'A1')!.volume).toBeUndefined();
+  });
+  it('does not delete the original item after duplication', () => {
+    engine.select('a');
+    engine.duplicate();
+    engine.remove();
+    expect(engine.project()!.items.some((i) => i.id === 'a')).toBe(true);
+  });
+});
+
+it('keeps Space and track shortcuts usable after mouse-operated gain controls',()=>{
+ engine.select('a');const gain=root.querySelector<HTMLInputElement>('[data-track-volume=A1]')!;
+ gain.dispatchEvent(new Event('pointerdown',{bubbles:true}));gain.focus();
+ key(' ',{},gain);gain.dispatchEvent(new KeyboardEvent('keyup',{key:' ',code:'Space',bubbles:true,cancelable:true}));expect(engine.snapshot().playing).toBe(true);
+ key('M',{shiftKey:true},gain);expect(engine.project()!.tracks.find(t=>t.id==='A1')!.muted).toBe(true);
+});
+it('makes unnamed multi-stream audibility explicit through visible track mutes',()=>{
+ engine.project()!.items=engine.project()!.items.filter(i=>i.id!=='a');engine.project()!.items[0].muted=false;engine.detachAudio();
+ const tracks=engine.project()!.tracks.filter(t=>t.sourceKey);expect(tracks.map(t=>Boolean(t.muted))).toEqual([false,true]);expect(notify).toHaveBeenCalled();
+ engine.muteTrack(tracks[1].id);expect(tracks[1].muted).toBe(false);expect(engine.project()!.items.filter(i=>i.kind==='audio').every(i=>!i.muted)).toBe(true);
+});
+it('identifies a named combined mix even when its individual streams are unnamed',()=>{
+ engine.project()!.items=engine.project()!.items.filter(i=>i.id!=='a');engine.project()!.items[0].muted=false;
+ previewClips=[{...clip,audio_tracks:[{index:0,title:'Combined audio'},{index:1}]} as Clip];engine.detachAudio();
+ const audio=engine.project()!.items.filter(i=>i.kind==='audio');expect(audio.map(i=>engine.project()!.tracks.find(t=>t.id===i.trackId)!.muted)).toEqual([true,false]);
+ expect(notify.mock.calls[0][0]).toContain('Audio detached.');
+});
+it('reuses a related nonoverlapping source lane across recordings while preserving a custom lane name',()=>{
+ engine.project()!.items=engine.project()!.items.filter(i=>i.id!=='a');engine.project()!.items[0].muted=false;
+ const streams=[{index:0,title:'Game Audio',language:'',channels:2},{index:1,title:'Microphone',language:'',channels:2}];previewClips=[{...clip,audio_tracks:streams},{...clip,slug:'second',library_id:'recording-two',audio_tracks:streams}];engine.detachAudio();
+ const first=engine.project()!.items.find(i=>i.kind==='audio'&&i.audioStream===0)!;engine.renameTrack(first.trackId,'My chosen game label');
+ engine.project()!.items.find(i=>i.id==='next')!.clipId='second';engine.select('next');engine.detachAudio();
+ expect(engine.project()!.tracks.filter(t=>t.type==='audio')).toHaveLength(2);expect(engine.project()!.tracks.find(t=>t.id===first.trackId)!.label).toBe('My chosen game label');
+ expect(engine.project()!.items.filter(i=>i.kind==='audio'&&i.audioStream===0).every(i=>i.trackId===first.trackId)).toBe(true);
+});

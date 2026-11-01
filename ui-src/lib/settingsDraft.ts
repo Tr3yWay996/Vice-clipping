@@ -1,6 +1,6 @@
 import {formatLengthLong} from './format';
 import {t} from './i18n';
-import type {Config,SmartAudioSource} from './types';
+import type {Config,SmartAudioSource,AudioWarningPreferences} from './types';
 
 /**
  * The settings form as plain data.
@@ -43,6 +43,7 @@ export interface Draft {
   sounds: Record<SoundKey, string>;
   audioTracks: string[];
   audioSources: Record<string,SmartAudioSource>;
+  audioWarningPreferences:AudioWarningPreferences;
   mixFirstTrack: boolean;
   wfMicStrategy: string;
 
@@ -160,6 +161,7 @@ export function draftFromConfig(config: Config): Draft {
           : {},
       ).map(([id, v]) => [id, Math.round(num(v, 1) * 100)]),
     ),
+    audioWarningPreferences: {critical:true,disconnected:true,silence:false,silence_seconds:180,ignored_sources:[],ignored_conditions:[],...(r.audio_warning_preferences as Partial<AudioWarningPreferences> ?? {})},
     audioSources: (r.audio_sources && typeof r.audio_sources==='object' ? structuredClone(r.audio_sources):{}) as Record<string,SmartAudioSource>,
     mixFirstTrack: Boolean(r.audio_tracks_mix_first),
     wfMicStrategy: str(r.wf_microphone_strategy, 'prompt'),
@@ -256,6 +258,7 @@ export function patchFromDraft(draft: Draft): Record<string, Record<string, unkn
       gsr_audio_source: draft.desktopSource || 'default_output',
       audio_tracks: [...draft.audioTracks],
       audio_sources: structuredClone(draft.audioSources),
+      audio_warning_preferences:structuredClone(draft.audioWarningPreferences),
       audio_track_volumes: Object.fromEntries(
         draft.audioTracks.map(id => [id, (draft.audioTrackVolumes[id] ?? 100) / 100]),
       ),

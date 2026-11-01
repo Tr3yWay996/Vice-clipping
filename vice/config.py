@@ -160,6 +160,10 @@ class RecordingConfig:
     audio_tracks: list[str] = field(default_factory=list)
     # Logical smart sources; legacy audio_tracks ids remain unchanged.
     audio_sources: dict[str, dict] = field(default_factory=dict)
+    audio_warning_preferences: dict = field(default_factory=lambda: {
+        "critical": True, "disconnected": True, "silence": False,
+        "silence_seconds": 180, "ignored_sources": [], "ignored_conditions": [],
+    })
     # When separate tracks are configured, also record an extra track 1 that
     # mixes every source. Players, Discord, and share embeds play track 1, so
     # this keeps shared clips complete while the separates stay editable.
@@ -494,6 +498,8 @@ def normalize_overlay(cfg: "Config") -> None:
 
 def clamp_recording_limits(cfg: Config) -> None:
     from .audio_router import validate_sources
+    from .audio_warnings import preferences
+    cfg.recording.audio_warning_preferences=preferences(cfg.recording.audio_warning_preferences)
     sources=cfg.recording.audio_sources
     if not isinstance(sources,dict):sources={}
     valid={}

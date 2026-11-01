@@ -1421,5 +1421,34 @@
     "connected": "Connected; waiting for sound",
     "captured": "Sound captured in sample"
   }
-}
+},
+  "audioWorkflow": {
+    "ambiguousDetach": "These streams have no source names, so only the first track starts audible. Use each track’s M button to choose additional sources; an unnamed track may contain a combined mix.",
+    "warningPreferences": "Audio warnings",
+    "critical": "Critical capture failures",
+    "disconnected": "Disconnected audio sources",
+    "silence": "Notify about prolonged silence",
+    "silenceDuration": "Silence duration (seconds)",
+    "restoreWarning": "Restore warning",
+    "silenceCondition": "Silence this warning",
+    "silenceSource": "Silence this source",
+    "renameTrack": "Rename Track",
+    "muteTrack": "Mute Track",
+    "unmuteTrack": "Unmute Track",
+    "soloTrack": "Solo Track",
+    "unsoloTrack": "Clear Solo",
+    "resetVolume": "Reset Volume",
+    "selectContents": "Select Track Contents",
+    "muteItem": "Mute Item",
+    "unmuteItem": "Unmute Item",
+    "adjustVolume": "Adjust Volume",
+    "revealOriginal": "Reveal Original Clip",
+    "trackMute": "Mute {name}",
+    "trackSolo": "Solo {name}",
+    "trackVolume": "Volume: {name}",
+    "soloHelp": "Solo; Shift-click to listen to multiple tracks",
+    "detachedHelp": "Audio detached. Separate streams are audible; a combined mix is muted to avoid doubling. Use track M/S and item controls to choose what you hear.",
+    "separateExport": "Export separate named audio tracks",
+    "shortcuts": "Space: play/pause (hold to boost); arrows: seek/volume; Shift+Left/Right: fine seek; I/O: trim; S: split; F2: rename selected track or media; Shift+M/S: track mute/solo; Ctrl+Z: undo; Ctrl+Shift+Z or Ctrl+Y: redo; Ctrl+C/V: copy/paste; Delete: delete; Escape: close menu or clear selection."
+  }
 }

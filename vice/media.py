@@ -157,7 +157,7 @@ async def probe_media_detailed(path: Path) -> tuple[Optional[dict], str]:
         tags = {k.lower(): v for k, v in stream.get("tags", {}).items()}
         audio_tracks.append({
             "index": index,
-            "title": str(tags.get("title", ""))[:200],
+            "title": str(tags.get("title") or (tags.get("handler_name") if str(tags.get("handler_name", "")).casefold() not in {"soundhandler", "audiohandler", ""} else "") or "")[:200],
             "language": str(tags.get("language", ""))[:32],
             "channels": int(stream.get("channels") or 0),
         })

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import json
 import re
 import time
@@ -134,8 +135,35 @@ def validate_project(raw: dict, sources: dict[str, Source]) -> tuple[dict, list[
             errors.append(f"track {tid}: duplicate id")
             continue
         seen_tracks.add(tid)
-        tracks.append({"id": tid, "type": ttype,
-                       "label": str(t.get("label", tid))[:8] or tid})
+        if "muted" in t and type(t["muted"]) is not bool:
+            errors.append(f"track {tid}: invalid mute")
+        if "volume" in t and (
+            not isinstance(t["volume"], (int, float))
+            or isinstance(t["volume"], bool)
+            or not math.isfinite(t["volume"])
+            or not 0 <= t["volume"] <= 1
+        ):
+            errors.append(f"track {tid}: invalid volume")
+        tracks.append(
+            {
+                "id": tid,
+                "type": ttype,
+                "label": str(t.get("label", tid))[:120] or tid,
+                **({"muted": bool(t["muted"])} if "muted" in t else {}),
+                **(
+                    {"volume": max(0.0, min(1.0, float(t["volume"])))}
+                    if isinstance(t.get("volume"), (int, float))
+                    and not isinstance(t.get("volume"), bool)
+                    and math.isfinite(t["volume"])
+                    else {}
+                ),
+                **(
+                    {"sourceKey": str(t["sourceKey"])[:256]}
+                    if t.get("sourceKey")
+                    else {}
+                ),
+            }
+        )
 
     if sum(1 for t in tracks if t["type"] == "text") != 1:
         errors.append("project needs exactly one text track")
@@ -161,7 +189,9 @@ def validate_project(raw: dict, sources: dict[str, Source]) -> tuple[dict, list[
             errors.append(f"item {iid}: unknown kind or track")
             continue
         if track_type[tid] != kind_track[kind]:
-            errors.append(f"item {iid}: {kind} does not belong on a {track_type[tid]} track")
+            errors.append(
+                f"item {iid}: {kind} does not belong on a {track_type[tid]} track"
+            )
             continue
         try:
             start = _r3(max(0.0, float(it.get("start", 0))))
@@ -191,7 +221,11 @@ def validate_project(raw: dict, sources: dict[str, Source]) -> tuple[dict, list[
             out["offset"] = offset
             if kind == "audio":
                 stream = it.get("audioStream", 0)
-                count = src.audio_streams if src.audio_streams is not None else int(src.has_audio)
+                count = (
+                    src.audio_streams
+                    if src.audio_streams is not None
+                    else int(src.has_audio)
+                )
                 if type(stream) is not int or not 0 <= stream < count:
                     errors.append(f"item {iid}: audio stream is missing or invalid")
                     continue
@@ -214,12 +248,18 @@ def validate_project(raw: dict, sources: dict[str, Source]) -> tuple[dict, list[
                     except (TypeError, ValueError):
                         length = TRANS_MIN
                     cap = min(TRANS_MAX, _r3(dur * 0.8))
-                    out["trans"] = {"fx": trans["fx"],
-                                    "len": _r3(min(max(TRANS_MIN, length), cap))}
+                    out["trans"] = {
+                        "fx": trans["fx"],
+                        "len": _r3(min(max(TRANS_MIN, length), cap)),
+                    }
 
         if kind == "text":
             font = it.get("font") if it.get("font") in FONT_FILES else "display"
-            color = it.get("color") if _COLOR_RE.match(str(it.get("color", ""))) else "#f2f5fa"
+            color = (
+                it.get("color")
+                if _COLOR_RE.match(str(it.get("color", "")))
+                else "#f2f5fa"
+            )
             try:
                 size = int(it.get("size", 64))
             except (TypeError, ValueError):
@@ -228,15 +268,17 @@ def validate_project(raw: dict, sources: dict[str, Source]) -> tuple[dict, list[
                 weight = int(it.get("weight", 600))
             except (TypeError, ValueError):
                 weight = 600
-            out.update({
-                "text": str(it.get("text", ""))[:200],
-                "font": font,
-                "size": min(1000, max(8, size)),
-                "weight": min(800, max(100, weight)),
-                "color": color,
-                "x": _r3(min(100.0, max(0.0, float(it.get("x", 50) or 0)))),
-                "y": _r3(min(100.0, max(0.0, float(it.get("y", 50) or 0)))),
-            })
+            out.update(
+                {
+                    "text": str(it.get("text", ""))[:200],
+                    "font": font,
+                    "size": min(1000, max(8, size)),
+                    "weight": min(800, max(100, weight)),
+                    "color": color,
+                    "x": _r3(min(100.0, max(0.0, float(it.get("x", 50) or 0)))),
+                    "y": _r3(min(100.0, max(0.0, float(it.get("y", 50) or 0)))),
+                }
+            )
         items.append(out)
 
     order = {t["id"]: i for i, t in enumerate(tracks)}
@@ -535,11 +577,18 @@ def discord_bitrates(duration: float, audio_streams: int = 1) -> tuple[int, int]
     return video_kbps, DISCORD_AUDIO_KBPS
 
 
-def build_export_cmd(project: dict, sources: dict[str, Source], out_path: Path,
-                     *, accent: str = "#0099ff", fonts: Optional[Path] = None,
-                     text_dir: Optional[Path] = None,
-                     discord_optimized: bool = False,
-                     key_burn: Optional[KeyBurn] = None) -> list[str]:
+def build_export_cmd(
+    project: dict,
+    sources: dict[str, Source],
+    out_path: Path,
+    *,
+    accent: str = "#0099ff",
+    fonts: Optional[Path] = None,
+    text_dir: Optional[Path] = None,
+    discord_optimized: bool = False,
+    separate_audio: bool = False,
+    key_burn: Optional[KeyBurn] = None,
+) -> list[str]:
     """Build the full ffmpeg argv for a validated project. Pure: callers
     write out the text files (text_file_contents) before running it."""
     fonts = fonts or font_dir()
@@ -564,8 +613,9 @@ def build_export_cmd(project: dict, sources: dict[str, Source], out_path: Path,
     lines = ctx.lines
 
     # The program (bottom) track is a full-length opaque stream.
-    cur = _VideoChain(ctx, transparent=False).build(lane(main_id), extent,
-                                                    pad_tail=True)
+    cur = _VideoChain(ctx, transparent=False).build(
+        lane(main_id), extent, pad_tail=True
+    )
     if cur is None:
         cur = ctx.label("s")
         lines.append(_gap(extent, w, h) + f"[{cur}]")
@@ -574,8 +624,9 @@ def build_export_cmd(project: dict, sources: dict[str, Source], out_path: Path,
     # the program. Alpha does the masking, so no enable window is needed. The
     # earliest listed track is overlaid last so it wins, matching the preview.
     for tid in reversed(video_tracks[:-1]):
-        upper = _VideoChain(ctx, transparent=True).build(lane(tid), extent,
-                                                         pad_tail=False)
+        upper = _VideoChain(ctx, transparent=True).build(
+            lane(tid), extent, pad_tail=False
+        )
         if upper is None:
             continue
         lbl = ctx.label("o")
@@ -598,70 +649,154 @@ def build_export_cmd(project: dict, sources: dict[str, Source], out_path: Path,
             f"x=(w*{_n(it['x'])}/100)-(text_w/2):"
             f"y=(h*{_n(it['y'])}/100)-(text_h/2):"
             f"enable='between(t,{_n(it['start'])},{_n(it['start'] + it['dur'])})'"
-            f"[{lbl}]")
+            f"[{lbl}]"
+        )
         cur = lbl
 
     image_inputs: list[Path] = []
     if key_burn is not None:
-        cur = _burn_keys(lines, ctx, cur, key_burn, lane(main_id), w, h,
-                         len(input_order), image_inputs)
+        cur = _burn_keys(
+            lines,
+            ctx,
+            cur,
+            key_burn,
+            lane(main_id),
+            w,
+            h,
+            len(input_order),
+            image_inputs,
+        )
 
     vout = cur
 
     # Audio: every unmuted clip item plus every audio item mixes over a
     # silent anchor that pins the output length.
-    contribs = [it for it in project["items"]
-                if it.get("clipId") and sources[it["clipId"]].has_audio
-                and it["kind"] in ("audio", "clip") and not it.get("muted")]
+    track_settings = {track["id"]: track for track in project["tracks"]}
+    contribs = [
+        it
+        for it in project["items"]
+        if it.get("clipId")
+        and sources[it["clipId"]].has_audio
+        and it["kind"] in ("audio", "clip")
+        and not it.get("muted")
+        and not track_settings[it["trackId"]].get("muted")
+    ]
     contribs.sort(key=lambda i: (i["start"], i["id"]))
     lines.append(f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{_n(extent)}[ab]")
     alabels = ["ab"]
     for k, it in enumerate(contribs):
+        gain = it.get("volume", 1) * track_settings[it["trackId"]].get("volume", 1)
         lines.append(
             f"[{input_idx[it['clipId']]}:a:{it.get('audioStream', 0)}]"
-            + (f"aresample={AUDIO_RATE}:async=1:first_pts=0," if it["kind"] == "audio" else "") +
-            f"atrim=start={_n(it['offset'])}:end={_n(it['offset'] + it['dur'])},"
+            + (
+                f"aresample={AUDIO_RATE}:async=1:first_pts=0,"
+                if it["kind"] == "audio"
+                else ""
+            )
+            + f"atrim=start={_n(it['offset'])}:end={_n(it['offset'] + it['dur'])},"
             f"asetpts=PTS-STARTPTS,"
             f"aformat=sample_rates={AUDIO_RATE}:channel_layouts=stereo,"
-            + (f"volume={_n(it['volume'])}," if it.get("volume", 1) != 1 else "") +
-            f"adelay={round(it['start'] * 1000)}:all=1[a{k}]")
+            + (f"volume={_n(gain)}," if gain != 1 else "")
+            + f"adelay={round(it['start'] * 1000)}:all=1[a{k}]"
+        )
         alabels.append(f"a{k}")
-    if len(alabels) == 1:
-        lines.append("[ab]anull[aout]")
-    else:
-        lines.append("".join(f"[{a}]" for a in alabels)
-                     + f"amix=inputs={len(alabels)}:duration=longest:normalize=0,"
-                     f"atrim=0:{_n(extent)},asetpts=PTS-STARTPTS[aout]")
+    output_audio = []
+    stems = separate_audio and not discord_optimized
+    groups = (
+        [
+            track
+            for track in project["tracks"]
+            if any(
+                it["trackId"] == track["id"] and it["kind"] == "audio"
+                for it in project["items"]
+            )
+            or any(it["trackId"] == track["id"] for it in contribs)
+        ]
+        if stems
+        else []
+    )
+    if not groups:
+        groups = [{"id": None, "label": "Mixed audio"}]
+    for index, track in enumerate(groups):
+        anchor = "ab" if index == 0 else f"ab{index}"
+        if index:
+            lines.append(
+                f"anullsrc=r={AUDIO_RATE}:cl=stereo,atrim=0:{_n(extent)}[{anchor}]"
+            )
+        inputs = [anchor] + [
+            f"a{k}"
+            for k, it in enumerate(contribs)
+            if not stems or track["id"] is None or it["trackId"] == track["id"]
+        ]
+        output = "aout" if index == 0 else f"aout{index}"
+        if len(inputs) == 1:
+            lines.append(f"[{anchor}]anull[{output}]")
+        else:
+            lines.append(
+                "".join(f"[{name}]" for name in inputs)
+                + f"amix=inputs={len(inputs)}:duration=longest:normalize=0,atrim=0:{_n(extent)},asetpts=PTS-STARTPTS[{output}]"
+            )
+        output_audio.append((output, track["label"]))
 
     if discord_optimized:
         # One mixed track out, whatever the sources had.
         video_kbps, audio_kbps = discord_bitrates(extent, 1)
-        video_args = ["-c:v", "libx264", "-preset", "medium",
-                     "-b:v", f"{video_kbps}k",
-                     "-maxrate", f"{round(video_kbps * 1.45)}k",
-                     "-bufsize", f"{video_kbps * 2}k"]
+        video_args = [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-b:v",
+            f"{video_kbps}k",
+            "-maxrate",
+            f"{round(video_kbps * 1.45)}k",
+            "-bufsize",
+            f"{video_kbps * 2}k",
+        ]
         audio_args = ["-c:a", "aac", "-b:a", f"{audio_kbps}k"]
     else:
         video_args = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
         audio_args = ["-c:a", "aac", "-b:a", "192k"]
 
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats",
-           "-progress", "pipe:1"]
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-progress",
+        "pipe:1",
+    ]
     for cid in input_order:
         cmd += ["-i", str(sources[cid].path)]
     for image in image_inputs:
         cmd += ["-loop", "1", "-t", _n(extent), "-i", str(image)]
     cmd += [
-        "-filter_complex", ";".join(lines),
-        "-map", f"[{vout}]", "-map", "[aout]",
+        "-filter_complex",
+        ";".join(lines),
+        "-map",
+        f"[{vout}]",
+        *[arg for output, title in output_audio for arg in ("-map", f"[{output}]")],
         *video_args,
-        "-pix_fmt", "yuv420p",
+        "-pix_fmt",
+        "yuv420p",
         *audio_args,
-        "-movflags", "+faststart",
-        "-t", _n(extent),
-        "-f", "mp4",
-        "-y", str(out_path),
+        "-movflags",
+        "+faststart",
+        "-t",
+        _n(extent),
+        "-f",
+        "mp4",
+        "-y",
+        str(out_path),
     ]
+    for index, (_, title) in enumerate(output_audio if stems else []):
+        cmd[-2:-2] = [
+            f"-metadata:s:a:{index}",
+            f"title={title}",
+            f"-metadata:s:a:{index}",
+            f"handler_name={title}",
+        ]
     return cmd
 
 

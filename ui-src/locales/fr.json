@@ -1353,5 +1353,34 @@
     "connected": "Connectée ; en attente de son",
     "captured": "Son capturé dans l’échantillon"
   }
-}
+},
+  "audioWorkflow": {
+    "ambiguousDetach": "Ces flux ne sont pas nommés : seule la première piste est audible au départ. Utilise le bouton M de chaque piste pour choisir les autres sources ; une piste sans nom peut contenir un mix combiné.",
+    "warningPreferences": "Alertes audio",
+    "critical": "Échecs critiques de capture",
+    "disconnected": "Sources audio déconnectées",
+    "silence": "Signaler les silences prolongés",
+    "silenceDuration": "Durée du silence (secondes)",
+    "restoreWarning": "Réactiver cette alerte",
+    "silenceCondition": "Ne plus signaler ce problème",
+    "silenceSource": "Ne plus signaler cette source",
+    "renameTrack": "Renommer la piste",
+    "muteTrack": "Couper la piste",
+    "unmuteTrack": "Rétablir la piste",
+    "soloTrack": "Écouter en solo",
+    "unsoloTrack": "Désactiver le solo",
+    "resetVolume": "Réinitialiser le volume",
+    "selectContents": "Sélectionner le contenu de la piste",
+    "muteItem": "Couper cet élément",
+    "unmuteItem": "Rétablir cet élément",
+    "adjustVolume": "Régler le volume",
+    "revealOriginal": "Afficher le clip original",
+    "trackMute": "Couper {name}",
+    "trackSolo": "Solo : {name}",
+    "trackVolume": "Volume : {name}",
+    "soloHelp": "Solo ; Maj-clic pour écouter plusieurs pistes",
+    "detachedHelp": "Audio détaché. Les flux séparés sont audibles ; le mix combiné est coupé pour éviter de doubler le son. Utilise M/S et les commandes des éléments pour choisir ce que tu écoutes.",
+    "separateExport": "Exporter des pistes audio séparées et nommées",
+    "shortcuts": "Espace : lecture/pause (maintenir pour accélérer) ; flèches : déplacement/volume ; Maj+Gauche/Droite : déplacement précis ; I/O : découper ; S : scinder ; F2 : renommer la piste ou le média sélectionné ; Maj+M/S : couper/solo ; Ctrl+Z : annuler ; Ctrl+Maj+Z ou Ctrl+Y : rétablir ; Ctrl+C/V : copier/coller ; Suppr : supprimer ; Échap : fermer le menu ou désélectionner."
+  }
 }

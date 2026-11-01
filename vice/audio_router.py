@@ -88,6 +88,8 @@ class AudioRouter:
         self.ready = asyncio.Event()
         self.lock = asyncio.Lock()
         self.closed = False
+        from .audio_warnings import AudioWarningPolicy
+        self.warning_policy = AudioWarningPolicy()
         self.last_signal = {}
         self.started = time.monotonic()
         self._last_status = None
@@ -583,7 +585,15 @@ class AudioRouter:
             levels = self.meters.read(slot.get("monitor", ""))
             if levels and max(levels) > 0.003:
                 self.last_signal[source] = now
-            quiet = now - self.last_signal.get(source, self.started) > 30
+            from .audio_warnings import preferences
+
+            threshold = preferences(self.cfg.recording.audio_warning_preferences)[
+                "silence_seconds"
+            ]
+            if not slot.get("playing") or not slot.get("linked"):
+                self.last_signal[source] = now
+            self.last_signal.setdefault(source, now)
+            quiet = now - self.last_signal[source] > threshold
             slot["levels"] = levels
             slot["recording_connected"] = slot.get("capture_node") in captured
             if not slot["enabled"]:
@@ -651,6 +661,9 @@ class AudioRouter:
             "error": self.error,
             "meter_error": self.meters.error,
             "tracks": tracks,
+            "warnings": self.warning_policy.update(
+                tracks, self.cfg.recording.audio_warning_preferences, self.error
+            ),
             "applications": applications,
             "recording": recording,
         }

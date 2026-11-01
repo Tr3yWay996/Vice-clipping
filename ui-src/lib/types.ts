@@ -275,5 +275,7 @@ export interface AudioMatchRule {field:'name'|'application_id'|'executable'|'exe
 export interface SmartAudioSource {name?:string;enabled?:boolean;rules?:AudioMatchRule[];device?:string;exclude?:boolean}
 export interface AudioApplication {node_id:number;serial:string;name:string;application_id:string;executable:string;executable_path?:string;pid:number;node_name:string;destination:string;active:boolean;muted?:boolean;levels:number[]|null;tracks:number[]}
 export interface AudioTrackState {id:string;name:string;enabled:boolean;nodes:number[];state:string;levels:number[]|null;recording_connected?:boolean;ambiguous?:boolean;error?:string;target?:{executable:string}|null}
-export interface SmartAudioState {supported:boolean;backend_supported?:boolean;error:string|null;meter_error?:string|null;recording:boolean;tracks:AudioTrackState[];applications:AudioApplication[]}
+export interface AudioWarning {id:string;source:string;name:string;state:string;kind:string}
+export interface AudioWarningPreferences {critical:boolean;disconnected:boolean;silence:boolean;silence_seconds:number;ignored_sources:string[];ignored_conditions:string[]}
+export interface SmartAudioState {warnings?:AudioWarning[];supported:boolean;backend_supported?:boolean;error:string|null;meter_error?:string|null;recording:boolean;tracks:AudioTrackState[];applications:AudioApplication[]}
 export interface AudioTestResult {id:string;duration:number;tracks:Array<{index:number;name:string;source:string;state:string;levels?:number[];rms_db?:number;url?:string}>}

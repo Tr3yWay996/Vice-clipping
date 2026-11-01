@@ -4,6 +4,9 @@ export interface EdTrack {
   id: string;
   type: 'video' | 'audio' | 'text';
   label: string;
+  muted?:boolean;
+  volume?:number;
+  sourceKey?:string;
 }
 
 export interface EdTransition {
@@ -51,6 +54,7 @@ export interface EdSnapshot {
   duration: number;
   pps: number;
   selected: EdItem | null;
+  selectedTrack?:EdTrack|null;
   canSplit: boolean;
   canDetach: boolean;
   canDuplicate: boolean;
@@ -68,6 +72,7 @@ export interface EditorDeps {
   notify: (title: string, tone?: 'accent' | 'error') => void;
   accent: () => string;
   renameSource?: (clip: Clip) => void;
+  revealSource?: (clip:Clip)=>void;
   playbackBoost?: () => Pick<import('../lib/playbackBoost').PlaybackBoost, 'multiplier' | 'setMultiplier' | 'changed'>;
   monitoring?: () => {volume: number; setVolume: (level: number) => void; toggleMuted: () => void};
 }

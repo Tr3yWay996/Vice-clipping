@@ -2657,20 +2657,53 @@ async def _apply_track_volumes(path: Path, rc) -> None:
 
 async def _apply_track_titles(path: Path, rc) -> None:
     layout, mixed = _separate_track_layout(rc)
-    if not layout or not getattr(rc, "audio_sources", {}):
+
+    def title(source):
+        custom = getattr(rc, "audio_sources", {}).get(source, {}).get("name")
+        if custom:
+            return custom
+        if "|" in source:
+            return "Combined audio"
+        if source == "auto:game":
+            return "Game Audio"
+        if source.startswith("app-inverse:"):
+            return "Desktop except " + source[12:]
+        if source.startswith("app:"):
+            return source[4:]
+        if (
+            source == "default_input"
+            or source.startswith("device:")
+            and not source.endswith(".monitor")
+        ):
+            return "Microphone"
+        if source == "default_output" or source.endswith(".monitor"):
+            return "Desktop Audio"
+        return source
+
+    codecs = await _audio_stream_codecs(path)
+    if not codecs:
         return
+    if not layout:
+        if len(codecs) == 1:
+            layout = (
+                ["combined|audio"]
+                if _captures_desktop_audio(rc) and _captures_microphone(rc)
+                else [
+                    (
+                        rc.gsr_audio_source
+                        if _captures_desktop_audio(rc)
+                        else _gsr_mic_source(rc)
+                    )
+                ]
+            )
+        else:
+            layout = [rc.gsr_audio_source, _gsr_mic_source(rc)]
     titles = [
-        (
-            rc.audio_sources.get(source, {}).get("name")
-            or ("Recorded Game Audio" if source == "auto:game" else source)
-        )
-        for source in layout
+        title(layout[index]) if index < len(layout) else f"Audio {index+1}"
+        for index in range(len(codecs))
     ]
     if mixed:
         titles[0] = "Combined audio"
-    codecs = await _audio_stream_codecs(path)
-    if len(codecs) != len(titles):
-        return
     tmp = path.with_name(path.stem + ".audio-titles" + path.suffix)
     args = ["ffmpeg", "-v", "error", "-i", str(path), "-map", "0", "-c", "copy"]
     for index, title in enumerate(titles):

@@ -67,6 +67,7 @@ export function Editor() {
       monitoring: () => audioRef.current,
       playbackBoost: () => speedRef.current.actions,
       renameSource: setRenamingSource,
+      revealSource:clip=>{dispatch({type:'setSearch',query:clipTitle(clip)});dispatch({type:'setView',view:'clips',playlistId:null});},
       notify: (title, tone = 'accent') =>
         notify({
           kind: tone === 'error' ? 'error' : 'info',
@@ -229,10 +230,11 @@ export function Editor() {
                 ])}
               />
               </div>
-              <label className="ed-audio-volume">
+              <label className="ed-audio-volume" data-ed-volume>
                 <span>{t('editor.audioVolume')} {Math.round((selected.volume ?? 1) * 100)}%</span>
-                <input type="range" min="0" max="100" step="1"
+                <input type="range" data-playback-control="volume" min="0" max="100" step="1"
                   value={Math.round((selected.volume ?? 1) * 100)}
+                  onPointerDown={()=>engine.beginInspectorEdit()} onPointerUp={()=>engine.endInspectorEdit()} onPointerCancel={()=>engine.endInspectorEdit()} onBlur={()=>engine.endInspectorEdit()}
                   onChange={e => engine.inspectorChange('volume', Number(e.target.value) / 100)} />
               </label>
               <label className="ed-audio-mute">
@@ -349,8 +351,8 @@ export function Editor() {
             </button>
           </div>
           <details className="ed-shortcuts">
-            <summary>{t('playback.shortcuts')}</summary>
-            <p>{t('playback.shortcutHelp')}</p><p>{t('editor.shortcutHelp')}</p>
+            <summary>{t('playback.shortcuts')}</summary><p>{t('audioWorkflow.shortcuts')}</p>
+            <p>{t('playback.shortcutHelp')}</p>
           </details>
         </div>
       </div>
@@ -469,6 +471,7 @@ function ExportModal({
   const [custom, setCustom] = useState('');
   const [addToLibrary, setAddToLibrary] = useState(true);
   const [discordOptimized, setDiscordOptimized] = useState(false);
+  const [separateAudio,setSeparateAudio]=useState(false);
   const [showKeys, setShowKeys] = useState(true);
   const projectHasKeys =
     open &&
@@ -553,6 +556,7 @@ function ExportModal({
       add_to_library: addToLibrary,
       accent,
       discord_optimized: discordOptimized,
+      separate_audio:separateAudio&&!discordOptimized,
       keys: projectHasKeys && showKeys,
     };
     if (name.trim()) body.filename = name.trim();
@@ -683,6 +687,7 @@ function ExportModal({
               onChange={setDiscordOptimized}
             />
           </label>
+          {!discordOptimized?<label className="ed-export-field"><span>{t('audioWorkflow.separateExport')}</span><Toggle label={t('audioWorkflow.separateExport')} checked={separateAudio} onChange={setSeparateAudio}/></label>:null}
           <p className="ed-export-summary mono">{summary}</p>
           {recording ? (
             <p className="ed-export-warn">

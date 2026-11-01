@@ -676,7 +676,7 @@
 
 .ed-rail-corner {
   flex: none;
-  width: 54px;
+  width: 152px;
 }
 
 #ed-ruler {
@@ -742,7 +742,7 @@
   left: 0;
   z-index: 10;
   flex: none;
-  width: 54px;
+  width: 152px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1178,3 +1178,16 @@
 
 .ed-transport .player-tc { white-space: nowrap; }
 .ed-transport .player-volume-range { width: clamp(56px, 8vw, 96px); }
+
+.ed-rail[data-selected="true"] { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+.ed-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-track-controls { display: flex; gap: 4px; }
+.ed-track-controls button { border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 5px; background: transparent; color: var(--color-text-secondary); font-size: 11px; cursor: pointer; }
+.ed-track-controls button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-on-accent); }
+.ed-rail[data-muted="true"] .ed-rail-label { opacity: .5; }
+.ed-track-name { width: 100%; min-width: 0; font-size: 11px; }
+
+.ed-track-controls input { width: 64px; min-width: 0; accent-color: var(--color-accent); }
+.ed-rail-type { position: absolute; right: 4px; top: 2px; font-size: 11px; }
+.ed-rail-label { padding-right: 22px; }
+.ed-lane.audio[data-track-muted="true"] .ed-item, .ed-lane.audio[data-monitor-muted="true"] .ed-item { opacity: .5; }
