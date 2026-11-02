@@ -1,3 +1,4 @@
+import {filmstripTiles,waveformRetryDelay} from './timelineArtwork';
 import {formatBytes} from '../lib/format';
 // Aliased: this file uses `t` as a local for times and tracks throughout.
 import {t as translate} from '../lib/i18n';
@@ -1659,8 +1660,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     }
     // Lazy like the library list: a long timeline scrolls well past its own
     // width, and a thumbnail costs about 900 KB once decoded.
-    const count=Math.max(1,Math.min(16,Math.ceil(w/90)));
-    const thumb=c?`<div class="ed-filmstrip">${Array.from({length:count},(_,index)=>{const at=(it.offset??0)+it.dur*(index+.5)/count;return `<img src="/api/editor/previews/${encodeURIComponent(c.slug)}/frame?offset=${at.toFixed(3)}&v=${encodeURIComponent(c.media_id??c.video_url)}" loading="lazy" alt="" draggable="false">`;}).join('')}</div>`:'';
+    const thumb=c?`<div class="ed-filmstrip" data-film="${escAttr(it.id)}"></div>`:'';
     return `<div class="ed-item ed-item-clip${selCls}${miss}" ${base}>
     ${thumb}<div class="ed-item-shade"></div>
     <div class="ed-item-hd">
@@ -1746,64 +1746,172 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
     wireTimeline();
     hydrateWaveforms();
+    scheduleFilmstrips();
     updatePlayheadDom();
     emit();
   }
 
-  const waves=new Map<string,number[]>();const waveJobs=new Set<string>();const waveFailures=new Set<string>();
-  let waveObserver:IntersectionObserver|null=null;
-  function hydrateWaveforms() {
-    waveObserver?.disconnect();
-    const load = async (el: SVGElement) => {
-      const it = item(el.dataset.wave ?? null),
+  let filmTimer:number|undefined;
+  let filmResize:ResizeObserver|null=null;
+  function scheduleFilmstrips() {
+    window.clearTimeout(filmTimer);
+    filmTimer = window.setTimeout(renderFilmstrips, 100);
+  }
+  function renderFilmstrips() {
+    if (!mounted || !box) return;
+    const viewport = box.timelineScroll.getBoundingClientRect(),
+      left = viewport.left + ED_RAIL,
+      right = viewport.right;
+    let budget = 96;
+    box.timelineCanvas.querySelectorAll<HTMLElement>('[data-film]').forEach((host) => {
+      const it = item(host.dataset.film ?? null),
         clip = it ? clipOf(it) : null;
-      if (!it || !clip) return;
-      const url = `/api/editor/previews/${encodeURIComponent(clip.slug)}/wave?offset=${it.offset ?? 0}&duration=${it.dur}&stream=${it.audioStream ?? 0}&v=${encodeURIComponent(clip.media_id ?? clip.video_url)}`;
-      const draw = (peaks:number[]) => {
-        const segments=peaks.map((peak,index)=>`M${index} ${32-Math.sqrt(peak)*31}v${Math.sqrt(peak)*62}`).join(' ');
-        el.innerHTML=`<path d="${segments}" stroke="currentColor" stroke-width="1" fill="none"/>`;
-      };
-      if (waves.has(url)) {
-        draw(waves.get(url)!);
+      const rect = host.parentElement!.getBoundingClientRect();
+      if (
+        !it ||
+        !clip ||
+        rect.right < left ||
+        rect.left > right ||
+        rect.bottom < viewport.top ||
+        rect.top > viewport.bottom ||
+        budget <= 0
+      ) {
+        host.replaceChildren();
         return;
       }
-      if (waveJobs.has(url) || waveFailures.has(url)) return;
-      waveJobs.add(url);
-      try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error();
-        const data = await response.json();
-        if (
-          !Array.isArray(data.peaks) ||
-          data.peaks.length !== 1024 ||
-          !data.peaks.every(
-            (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1,
-          )
-        )
-          throw new Error();
-        waves.set(url, data.peaks);
-        if (waves.size > 128) waves.delete(waves.keys().next().value!);
-        if (mounted) hydrateWaveforms();
-      } catch {
-        waveFailures.add(url);
-      } finally {
-        waveJobs.delete(url);
+      const tiles = filmstripTiles(
+        it.offset ?? 0,
+        it.dur,
+        pps,
+        (left - rect.left) / pps,
+        (right - rect.left) / pps,
+        Math.max(1, right - left),
+      ).slice(0, budget);
+      budget -= tiles.length;
+      const existing = new Map(
+        [...host.querySelectorAll<HTMLImageElement>('img')].map((img) => [
+          img.getAttribute('src'),
+          img,
+        ]),
+      );
+      const keep = new Set<HTMLImageElement>();
+      for (const tile of tiles) {
+        const url = `/api/editor/previews/${encodeURIComponent(clip.slug)}/frame?offset=${tile.time.toFixed(3)}&v=${encodeURIComponent(clip.media_id ?? clip.video_url)}`;
+        let img = existing.get(url);
+        if (!img) {
+          img = document.createElement('img');
+          img.loading = 'lazy';
+          img.alt = '';
+          img.draggable = false;
+          img.src = url;
+          host.append(img);
+        }
+        img.style.left = tile.left + 'px';
+        img.style.width = tile.width + 'px';
+        keep.add(img);
       }
-    };
+      for (const img of existing.values()) if (!keep.has(img)) img.remove();
+    });
+  }
+
+  const waves=new Map<string,number[]>();
+  const waveJobs=new Map<string,AbortController>();
+  const waveFailures=new Map<string,{attempts:number;nextAt:number}>();
+  const visibleWaves=new Set<SVGElement>();
+  let waveTimer:number|undefined;
+  let waveObserver:IntersectionObserver|null=null;
+  function waveUrl(el: SVGElement) {
+    const it = item(el.dataset.wave ?? null),
+      clip = it ? clipOf(it) : null;
+    return it && clip
+      ? `/api/editor/previews/${encodeURIComponent(clip.slug)}/wave?offset=${it.offset ?? 0}&duration=${it.dur}&stream=${it.audioStream ?? 0}&v=${encodeURIComponent(clip.media_id ?? clip.video_url)}`
+      : null;
+  }
+  function drawWave(el: SVGElement, peaks: number[]) {
+    if (el.dataset.drawn === waveUrl(el)) return;
+    const segments = peaks
+      .map((peak, index) => `M${index} ${32 - Math.sqrt(peak) * 31}v${Math.sqrt(peak) * 62}`)
+      .join(' ');
+    el.innerHTML = `<path d="${segments}" stroke="currentColor" stroke-width="1" fill="none"/>`;
+    el.dataset.drawn = waveUrl(el)!;
+  }
+  function pumpWaves() {
+    window.clearTimeout(waveTimer);
+    if (!mounted) return;
+    let next = Infinity;
+    for (const el of visibleWaves) {
+      if (!el.isConnected) {
+        visibleWaves.delete(el);
+        continue;
+      }
+      const url = waveUrl(el);
+      if (!url) continue;
+      const cached = waves.get(url);
+      if (cached) {
+        drawWave(el, cached);
+        continue;
+      }
+      if (waveJobs.has(url)) continue;
+      const failure = waveFailures.get(url);
+      if (failure && failure.nextAt > Date.now()) {
+        next = Math.min(next, failure.nextAt);
+        continue;
+      }
+      if (waveJobs.size >= 4) continue;
+      const controller = new AbortController();
+      waveJobs.set(url, controller);
+      void (async () => {
+        try {
+          const response = await fetch(url, {signal: controller.signal});
+          if (!response.ok) throw new Error('waveform');
+          const data = await response.json();
+          if (
+            !Array.isArray(data.peaks) ||
+            data.peaks.length !== 1024 ||
+            !data.peaks.every(
+              (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1,
+            )
+          )
+            throw new Error('waveform');
+          if (controller.signal.aborted) return;
+          waves.set(url, data.peaks);
+          waveFailures.delete(url);
+          if (waves.size > 128) waves.delete(waves.keys().next().value!);
+        } catch {
+          if (!controller.signal.aborted) {
+            const attempts = (waveFailures.get(url)?.attempts ?? 0) + 1;
+            waveFailures.set(url, {attempts, nextAt: Date.now() + waveformRetryDelay(attempts)});
+          }
+        } finally {
+          if (waveJobs.get(url) === controller) waveJobs.delete(url);
+          if (mounted) pumpWaves();
+        }
+      })();
+    }
+    if (Number.isFinite(next))
+      waveTimer = window.setTimeout(pumpWaves, Math.max(1, next - Date.now()));
+  }
+  function hydrateWaveforms() {
+    waveObserver?.disconnect();
+    visibleWaves.clear();
+    window.clearTimeout(waveTimer);
+    const elements = [...(box?.timelineCanvas.querySelectorAll<SVGElement>('[data-wave]') ?? [])];
+    const valid = new Set(elements.map(waveUrl));
+    for (const key of waveFailures.keys()) if (!valid.has(key)) waveFailures.delete(key);
+    for (const key of waves.keys()) if (!valid.has(key)) waves.delete(key);
+    for (const [key, controller] of waveJobs) if (!valid.has(key)) controller.abort();
     if (typeof IntersectionObserver !== 'undefined') {
       waveObserver = new IntersectionObserver(
         (entries) => {
-          for (const entry of entries)
-            if (entry.isIntersecting) {
-              waveObserver?.unobserve(entry.target);
-              void load(entry.target as SVGElement);
-            }
+          for (const entry of entries) {
+            if (entry.isIntersecting) visibleWaves.add(entry.target as SVGElement);
+            else visibleWaves.delete(entry.target as SVGElement);
+          }
+          pumpWaves();
         },
         {root: box?.timelineScroll, rootMargin: '200px'},
       );
-      box?.timelineCanvas
-        .querySelectorAll<SVGElement>('[data-wave]')
-        .forEach((el) => waveObserver!.observe(el));
+      elements.forEach((el) => waveObserver!.observe(el));
     }
   }
 
@@ -2732,6 +2840,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         play:() => setPlaying(true), pause:() => setPlaying(false),
         setRate:rate => {playbackRate = rate; renderPreviewFrame(false);},
       }) : null});
+    box.timelineScroll.addEventListener('scroll',scheduleFilmstrips,{passive:true});
+    filmResize=new ResizeObserver(scheduleFilmstrips);filmResize.observe(box.timelineScroll);
     wireStage();
     refreshMissing();
     renderLibrary();
@@ -2745,7 +2855,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     unbindKeyboard?.();
     unbindKeyboard = undefined;
     scrub.cancel();
-    waveObserver?.disconnect();
+    waveObserver?.disconnect();visibleWaves.clear();window.clearTimeout(waveTimer);
+    for(const controller of waveJobs.values())controller.abort();
+    window.clearTimeout(filmTimer);filmResize?.disconnect();box?.timelineScroll.removeEventListener('scroll',scheduleFilmstrips);
     setPlaying(false);
     if (raf) cancelAnimationFrame(raf);
     raf = null;

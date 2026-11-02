@@ -86,3 +86,85 @@ class RealTimelinePreviews(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(list((root / "cache").iterdir()), [])
             finally:
                 await service.close()
+
+    async def test_ten_minute_two_track_analysis_is_deduplicated_and_concurrency_bounded(
+        self,
+    ):
+        import time
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "ten-minutes.mkv"
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=frequency=440:sample_rate=8000:duration=600",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=8000:cl=stereo",
+                    "-t",
+                    "600",
+                    "-map",
+                    "0:a",
+                    "-map",
+                    "1:a",
+                    "-c:a",
+                    "flac",
+                    "-threads",
+                    "1",
+                    str(source),
+                ],
+                check=True,
+                timeout=30,
+            )
+            service = TimelinePreviews(root / "cache")
+
+            class CountingLimit:
+                def __init__(self):
+                    self.sem = asyncio.Semaphore(2)
+                    self.active = 0
+                    self.maximum = 0
+                    self.entries = 0
+
+                async def __aenter__(self):
+                    await self.sem.acquire()
+                    self.active += 1
+                    self.entries += 1
+                    self.maximum = max(self.maximum, self.active)
+
+                async def __aexit__(self, *_):
+                    self.active -= 1
+                    self.sem.release()
+
+            limit = CountingLimit()
+            service.lock = limit
+            try:
+                started = time.monotonic()
+                results = await asyncio.gather(
+                    *(
+                        service.get(source, "wave", 0, 600, stream)
+                        for stream in [0, 1, 0, 1, 0, 1]
+                    )
+                )
+                elapsed = time.monotonic() - started
+                self.assertEqual(limit.entries, 2)
+                self.assertLessEqual(limit.maximum, 2)
+                self.assertEqual(len(set(results)), 2)
+                self.assertGreater(
+                    max(json.loads(results[0].read_text())["peaks"]), 0.01
+                )
+                self.assertEqual(max(json.loads(results[1].read_text())["peaks"]), 0)
+                cached = time.monotonic()
+                await service.get(source, "wave", 0, 600, 0)
+                cached = time.monotonic() - cached
+                print(
+                    f"PERF ten-minute stereo preview: two source tracks, six callers, {limit.entries} FFmpeg jobs, max concurrency {limit.maximum}, cold {elapsed:.3f}s, cached {cached:.6f}s"
+                )
+            finally:
+                await service.close()

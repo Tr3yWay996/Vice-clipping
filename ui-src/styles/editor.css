@@ -1194,3 +1194,5 @@
 .ed-selection-box { position: fixed; pointer-events: none; z-index: 1000; border: 1px solid var(--color-accent); background: color-mix(in srgb, var(--color-accent) 15%, transparent); }
 .ed-filmstrip { position: absolute; inset: 0; display: flex; overflow: hidden; pointer-events: none; }
 .ed-item-clip .ed-filmstrip img { position: static; min-width: 0; width: 0; flex: 1; height: 100%; object-fit: cover; opacity: .8; }
+
+.ed-item-clip .ed-filmstrip img { position: absolute; flex: none; object-fit: cover; }

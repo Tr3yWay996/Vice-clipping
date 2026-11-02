@@ -43,9 +43,20 @@ preview, displayed with a square-root amplitude scale. This is an overview rathe
 than a sample-accurate mastering display. Silent regions remain flat. Each envelope uses one SVG path, avoiding thousands
 of individual DOM elements per audio item.
 
-Video items show up to sixteen small frames sampled progressively through the
-item's source interval. Source trims update both previews. Images are lazy-loaded;
-waveforms are requested when visible. React/pointer handlers do not decode media.
+Video items render time-grid tiles for the visible source interval plus a small
+overscan. Their temporal spacing adapts to zoom and viewport width instead of
+stretching a fixed set over the whole recording. Updates coalesce for 100 ms;
+overlapping tiles keep their image elements and cached URLs. At most 24 tiles per
+item and 96 across the viewport are retained. Offscreen items have no filmstrip
+images. Scroll and resize update artwork without rebuilding timeline selection.
+Source trims and content revisions update both previews; images remain lazy-loaded.
+
+Waveform fetches share a four-request limit and one retry timer. Visible failures
+retry after 1, 2, 4, 8, 16, 32, then at most once every 60 seconds until recovery.
+Scrolling away stops retries; returning permits recovery. Repeated renders cannot
+bypass backoff. Content/range changes discard obsolete failure/cache state and
+abort obsolete requests. Closing the editor aborts requests and clears timers.
+React/pointer handlers do not decode media.
 
 The local-only API runs at most two FFmpeg analysis processes, deduplicates jobs,
 bounds the queued jobs, streams PCM in bounded chunks, and caches results using

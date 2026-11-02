@@ -779,6 +779,7 @@ it('renders progressing video frames and uses real per-stream waveform data with
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(100);
   const urls = [...root.querySelectorAll<HTMLImageElement>('[data-item=v] .ed-filmstrip img')].map(
     (img) => img.src,
   );
@@ -793,4 +794,224 @@ it('renders progressing video frames and uses real per-stream waveform data with
       .mock.calls.some(([url]) => String(url).includes('offset=2&duration=10&stream=1')),
   ).toBe(true);
   expect(observed.length).toBeGreaterThan(0);
+});
+
+describe('viewport filmstrips and waveform recovery', () => {
+  function observer() {
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(private callback: (entries: unknown[]) => void) {}
+        observe(target: Element) {
+          this.callback([{target, isIntersecting: true}]);
+        }
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  }
+  async function flush() {
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+  }
+  it('keeps ten-minute filmstrips viewport-sized during rapid zoom, scroll and resize', async () => {
+    previewClips = [{...clip, duration: 600}];
+    const project = engine.project()!;
+    project.items = [
+      {
+        id: 'long',
+        kind: 'clip',
+        trackId: 'V1',
+        clipId: 'source',
+        start: 0,
+        dur: 600,
+        offset: 0,
+        muted: true,
+      },
+    ];
+    const scroll = root.children[3] as HTMLElement;
+    Object.defineProperty(scroll, 'clientWidth', {value: 1000, configurable: true});
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const isItem = this.dataset.item === 'long',
+        left = isItem ? 152 - scroll.scrollLeft : 0,
+        width = isItem ? 600 * engine.snapshot().pps : 1000;
+      return {
+        left,
+        right: left + width,
+        top: 0,
+        bottom: 500,
+        width,
+        height: 500,
+        x: left,
+        y: 0,
+        toJSON() {},
+      };
+    });
+    engine.setClips(previewClips);
+    await vi.advanceTimersByTimeAsync(100);
+    let imgs = [...root.querySelectorAll<HTMLImageElement>('.ed-filmstrip img')];
+    expect(imgs.length).toBeLessThanOrEqual(24);
+    expect(Math.max(...imgs.map((img) => parseFloat(img.style.width)))).toBeLessThanOrEqual(192);
+    const firstTimes = imgs.map((img) => new URL(img.src).searchParams.get('offset'));
+    scroll.scrollLeft = 300 * engine.snapshot().pps;
+    for (let i = 0; i < 100; i++) scroll.dispatchEvent(new Event('scroll'));
+    await vi.advanceTimersByTimeAsync(100);
+    imgs = [...root.querySelectorAll<HTMLImageElement>('.ed-filmstrip img')];
+    expect(imgs.every((img) => Number(new URL(img.src).searchParams.get('offset')) > 250)).toBe(
+      true,
+    );
+    expect(imgs.map((img) => new URL(img.src).searchParams.get('offset'))).not.toEqual(firstTimes);
+    const existing = imgs[1];
+    scroll.scrollLeft += 10;
+    scroll.dispatchEvent(new Event('scroll'));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(existing.isConnected).toBe(true);
+    const mutations: MutationRecord[] = [];
+    const mo = new MutationObserver((records) => mutations.push(...records));
+    mo.observe(root, {subtree: true, childList: true});
+    for (let i = 0; i < 50; i++) {
+      engine.zoom(i % 2 ? 1 / 1.1 : 1.1);
+      scroll.scrollLeft = 300 * engine.snapshot().pps;
+      scroll.dispatchEvent(new Event('scroll'));
+    }
+    await flush();
+    expect(root.querySelectorAll('.ed-filmstrip img')).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(100);
+    const created = mutations
+      .flatMap((record) => [...record.addedNodes])
+      .filter((node) => node instanceof HTMLImageElement);
+    expect(created.length).toBeLessThanOrEqual(24);
+    expect(root.querySelectorAll('.ed-filmstrip img').length).toBeGreaterThan(0);
+    mo.disconnect();
+  });
+  it('recovers from transient waveform failures with backoff and invalidates failed content revisions', async () => {
+    observer();
+    let attempts = 0;
+    const peaks = Array(1024).fill(0.25);
+    vi.mocked(fetch).mockImplementation(async () => {
+      attempts++;
+      return {ok: attempts >= 3, json: async () => ({peaks})} as Response;
+    });
+    engine.setClips(previewClips);
+    await flush();
+    expect(attempts).toBe(1);
+    for (let i = 0; i < 50; i++) engine.setClips(previewClips);
+    await flush();
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(attempts).toBe(3);
+    expect(root.querySelector('[data-wave=a] path')).not.toBeNull();
+    const urls: string[] = [];
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      urls.push(String(url));
+      return {ok: false} as Response;
+    });
+    previewClips = [{...clip, media_id: 'failed-revision'}];
+    engine.setClips(previewClips);
+    await flush();
+    expect(urls).toHaveLength(1);
+    vi.mocked(fetch).mockImplementation(async (url) => {
+      urls.push(String(url));
+      return {ok: true, json: async () => ({peaks})} as Response;
+    });
+    previewClips = [{...clip, media_id: 'replacement-same-historical-date'}];
+    engine.setClips(previewClips);
+    await flush();
+    expect(urls).toHaveLength(2);
+    expect(urls[1]).toContain('replacement-same-historical-date');
+    expect(root.querySelector('[data-wave=a] path')).not.toBeNull();
+  });
+  it('bounds concurrent multi-track requests and stops retries when the editor closes', async () => {
+    observer();
+    const pending: Array<(response: Response) => void> = [];
+    let active = 0,
+      maximum = 0,
+      calls = 0;
+    vi.mocked(fetch).mockImplementation(() => {
+      calls++;
+      active++;
+      maximum = Math.max(maximum, active);
+      return new Promise<Response>((resolve) =>
+        pending.push((response) => {
+          active--;
+          resolve(response);
+        }),
+      );
+    });
+    previewClips = [{...clip, duration: 620}];
+    const p = engine.project()!;
+    p.items = p.items.filter((i) => i.kind !== 'audio');
+    for (let i = 0; i < 8; i++) {
+      p.tracks.push({id: 'ART' + i, type: 'audio', label: 'Audio ' + i});
+      p.items.push({
+        id: 'audio' + i,
+        kind: 'audio',
+        trackId: 'ART' + i,
+        clipId: 'source',
+        start: 0,
+        dur: 600,
+        offset: i * 2,
+        audioStream: i % 2,
+      });
+    }
+    engine.setClips(previewClips);
+    await flush();
+    for (let i = 0; i < 50; i++) {
+      engine.zoom(i % 2 ? 1 / 1.1 : 1.1);
+      (root.children[3] as HTMLElement).dispatchEvent(new Event('scroll'));
+    }
+    await flush();
+    expect(calls).toBe(4);
+    expect(maximum).toBe(4);
+    pending.splice(0).forEach((resolve) => resolve({ok: false} as Response));
+    await flush();
+    expect(calls).toBe(8);
+    expect(maximum).toBe(4);
+    pending.splice(0).forEach((resolve) => resolve({ok: false} as Response));
+    await flush();
+    engine.destroy();
+    const before = calls;
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(calls).toBe(before);
+  });
+});
+it('does not retry an offscreen failure and recovers when it becomes visible again', async () => {
+  let callback: (entries: unknown[]) => void = () => {};
+  let element: Element;
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(cb: (entries: unknown[]) => void) {
+        callback = cb;
+      }
+      observe(target: Element) {
+        element = target;
+        callback([{target, isIntersecting: true}]);
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  let attempts = 0;
+  vi.mocked(fetch).mockImplementation(async () => {
+    attempts++;
+    return {ok: attempts > 1, json: async () => ({peaks: Array(1024).fill(0.1)})} as Response;
+  });
+  engine.setClips(previewClips);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  expect(attempts).toBe(1);
+  callback([{target: element!, isIntersecting: false}]);
+  await vi.advanceTimersByTimeAsync(120000);
+  expect(attempts).toBe(1);
+  callback([{target: element!, isIntersecting: true}]);
+  for (let i = 0; i < 8; i++) await Promise.resolve();
+  expect(attempts).toBe(2);
+  expect(root.querySelector('[data-wave=a] path')).not.toBeNull();
 });
