@@ -1067,6 +1067,8 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
     def __init__(self, cfg, games=None) -> None:
         from .games import GameLibrary
         self.cfg = cfg
+        from .timeline_previews import TimelinePreviews
+        self.timeline_previews=TimelinePreviews(PROXY_DIR/"timeline")
         self.audio_router = None
         self.games = games if games is not None else GameLibrary()
         self._games_loop = None
@@ -1188,6 +1190,7 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
         r.add_post("/api/clips/{slug}/highlights",        self._api_add_highlight)
         r.add_patch("/api/clips/{slug}/highlights/{hid}", self._api_patch_highlight)
         r.add_delete("/api/clips/{slug}/highlights/{hid}",self._api_del_highlight)
+        r.add_get("/api/editor/previews/{slug}/{kind}", self._api_timeline_preview)
         r.add_get("/api/editor/project",              self._api_editor_get_project)
         r.add_post("/api/editor/project",             self._api_editor_save_project)
         r.add_post("/api/editor/export",              self._api_editor_export)
@@ -1344,6 +1347,8 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
         await asyncio.gather(*tasks, return_exceptions=True)
         if hasattr(self, "_keyframes"):
             await self._keyframes.close()
+        if hasattr(self,"timeline_previews"):
+            await self.timeline_previews.close()
         await self._exports.stop()
         for ws in list(self._ws_clients):
             try:
@@ -2703,6 +2708,18 @@ class ShareServer(GameLibraryAPI, TrashAPI, LibraryAPI, AudioAPI):
         return web.json_response({"ok": True})
 
     # ── editor ───────────────────────────────────────────────────────────────
+
+    async def _api_timeline_preview(self,req):
+        path=self._clips.get(req.match_info['slug']);kind=req.match_info['kind']
+        if path is None or kind not in {'wave','frame'}:raise web.HTTPNotFound()
+        try:
+            offset=float(req.query.get('offset',0));duration=float(req.query.get('duration',1));stream=int(req.query.get('stream',0))
+            import math
+            if not all(math.isfinite(v) for v in (offset,duration)) or offset<0 or duration<=0 or duration>3600 or not 0<=stream<32:raise ValueError()
+        except (ValueError,OverflowError):raise web.HTTPBadRequest()
+        try:result=await self.timeline_previews.get(path,kind,offset,duration,stream)
+        except (OSError,RuntimeError,asyncio.TimeoutError):raise web.HTTPUnprocessableEntity()
+        return web.FileResponse(result,headers={'Cache-Control':'no-cache','Content-Type':'application/json' if kind=='wave' else 'image/jpeg'})
 
     async def _api_editor_get_project(self, _: web.Request) -> web.Response:
         project = self.editor_project.load()

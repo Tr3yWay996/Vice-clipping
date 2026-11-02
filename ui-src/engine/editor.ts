@@ -137,6 +137,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   let sel: string | null = null;
   let selectedTrackId:string|null=null;
   let selectedIds=new Set<string>();
+  let selectedTracks = new Set<string>();
+  let itemAnchor:string|null=null, trackAnchor:string|null=null;
+  let timelineActive=false;
+  const pointerCleanups=new Set<()=>void>();
   const soloed=new Set<string>();
   let closeMenu=()=>{};
   let playhead = 0;
@@ -243,7 +247,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   // ── notification ────────────────────────────────────────────────
   function snapshot(): EdSnapshot {
     const it = selItem();
-    const canSplit = Boolean(it && playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2);
+    const canSplit = operationItems().some(
+      (it) => playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2,
+    );
     return {
       ready: Boolean(project),
       tab,
@@ -253,11 +259,12 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       duration: end(),
       pps,
       selected: it,
+      selectionCount:operationItems().length,
       selectedTrack: project?.tracks.find((track) => track.id === selectedTrackId) ?? null,
       canSplit,
       canDetach: Boolean(it && it.kind === 'clip' && !it.muted && clipOf(it)?.audio_tracks?.length),
-      canDuplicate: Boolean(it),
-      canDelete: Boolean(it),
+      canDuplicate: operationItems().length > 0,
+      canDelete: operationItems().length > 0,
       canUndo: undoStack.length > 0,
       canRedo: redoStack.length > 0,
       preparing: preparingNow,
@@ -352,6 +359,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (!project!.tracks.some((t) => t.id === selectedTrackId)) selectedTrackId = null;
     selectedIds = new Set([...selectedIds].filter((id) => item(id)));
     if (sel && !item(sel)) sel = null;
+    selectedTracks = new Set(
+      [...selectedTracks].filter((id) => project!.tracks.some((t) => t.id === id)),
+    );
     refreshMissing();
     scheduleSave();
     renderTimeline();
@@ -493,25 +503,67 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     commit();
   }
 
+  function operationItems() {
+    if (selectedIds.size) return project!.items.filter((it) => selectedIds.has(it.id));
+    if (selectedTracks.size) return project!.items.filter((it) => selectedTracks.has(it.trackId));
+    return selItem() ? [selItem()!] : [];
+  }
+  function unsafeGroup() {
+    deps.notify(translate('editorGestures.unsafePlacement'), 'error');
+  }
+  function safePlacement(candidates: EdItem[], excluded = new Set<string>()) {
+    const existing = project!.items.filter((it) => !excluded.has(it.id));
+    return candidates.every(
+      (it, index) =>
+        it.start >= 0 &&
+        project!.tracks.some(
+          (t) =>
+            t.id === it.trackId &&
+            t.type === ({clip: 'video', audio: 'audio', text: 'text'} as const)[it.kind],
+        ) &&
+        ![...existing, ...candidates.slice(0, index)].some(
+          (other) =>
+            other.trackId === it.trackId &&
+            other.start < it.start + it.dur - 0.001 &&
+            other.start + other.dur > it.start + 0.001,
+        ),
+    );
+  }
+  function requireSingle() {
+    if (operationItems().length > 1) {
+      deps.notify(translate('editorGestures.singleOnly'), 'error');
+      return false;
+    }
+    return true;
+  }
   function split() {
-    const it = selItem();
-    if (!it || playhead <= it.start + 0.2 || playhead >= it.start + it.dur - 0.2) return;
+    const targets = operationItems().filter(
+      (it) => playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2,
+    );
+    if (!targets.length) return;
     begin();
-    const t = playhead;
-    const right: EdItem = {
-      ...it,
-      id: uid(),
-      start: round(t),
-      dur: round(it.start + it.dur - t),
-      offset: round((it.offset || 0) + (t - it.start)),
-    };
-    delete right.trans;
-    it.dur = round(t - it.start);
-    project!.items.push(right);
+    selectedIds = new Set(operationItems().map((it) => it.id));
+    for (const it of targets) {
+      const right = {
+        ...it,
+        id: uid(),
+        start: round(playhead),
+        dur: round(it.start + it.dur - playhead),
+        offset: round((it.offset ?? 0) + playhead - it.start),
+      };
+      delete right.trans;
+      it.dur = round(playhead - it.start);
+      project!.items.push(right);
+      selectedIds.add(right.id);
+    }
+    sel = targets[0].id;
+    selectedTracks.clear();
+    selectedTrackId = null;
     commit();
   }
 
   function detachAudio() {
+    if (!requireSingle()) return;
     const it = selItem();
     if (!it || it.kind !== 'clip' || it.muted) return;
     const streams = clipOf(it)?.audio_tracks;
@@ -524,11 +576,16 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       /^(combined(?: audio)?|mix(?:ed)?(?: audio)?|desktop mix)$/i.test(
         streams[0].title?.trim() ?? '',
       );
-    const ambiguous = streams.length > 1 && !combined && !streams.every((stream) => stream.title?.trim());
+    const ambiguous =
+      streams.length > 1 && !combined && !streams.every((stream) => stream.title?.trim());
     for (const stream of streams) {
       const named = Boolean(stream.title?.trim());
-      const title = named ? stream.title! : translate('editor.recordedTrack', {number: stream.index + 1});
-      const sourceKey = named ? 'title:'+title+':'+stream.index : (clipOf(it)?.library_id ?? it.clipId) + ':' + stream.index;
+      const title = named
+        ? stream.title!
+        : translate('editor.recordedTrack', {number: stream.index + 1});
+      const sourceKey = named
+        ? 'title:' + title + ':' + stream.index
+        : (clipOf(it)?.library_id ?? it.clipId) + ':' + stream.index;
       let lane = project!.tracks.find(
         (track) =>
           track.type === 'audio' &&
@@ -577,43 +634,56 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function duplicate() {
-    const it = selItem();
-    if (!it) return;
-    begin();
-    const copy: EdItem = {...it, id: uid(), start: round(it.start + it.dur + 0.25)};
-    delete copy.trans;
-    insert(copy);
-    sel = copy.id;
-    commit();
+    const targets = operationItems();
+    if (!targets.length) return;
+    let delta =
+      Math.max(...targets.map((it) => it.start + it.dur)) +
+      0.25 -
+      Math.min(...targets.map((it) => it.start));
+    for (let attempts = 0; attempts <= project!.items.length * targets.length; attempts++) {
+      const blockers = targets.flatMap((it) =>
+        project!.items
+          .filter(
+            (other) =>
+              other.trackId === it.trackId &&
+              other.start < it.start + delta + it.dur &&
+              other.start + other.dur > it.start + delta,
+          )
+          .map((other) => other.start + other.dur - it.start + 0.25),
+      );
+      if (!blockers.length) break;
+      delta = Math.max(delta, ...blockers);
+    }
+    placeCopies(targets, delta);
   }
-
   function copySel() {
-    const selected = selectedIds.size
-      ? [...selectedIds].map((id) => item(id)).filter((it): it is EdItem => Boolean(it))
-      : [selItem()].filter((it): it is EdItem => Boolean(it));
-    if (selected.length) clipboard = JSON.parse(JSON.stringify(selected));
+    const targets = operationItems();
+    if (targets.length) clipboard = JSON.parse(JSON.stringify(targets));
+  }
+  function placeCopies(targets: EdItem[], delta: number) {
+    const copies = targets.map((it) => {
+      const copy = {...it, id: uid(), start: round(it.start + delta)};
+      delete copy.trans;
+      return copy;
+    });
+    if (!safePlacement(copies)) {
+      unsafeGroup();
+      return;
+    }
+    begin();
+    project!.items.push(...copies);
+    selectedIds = new Set(copies.map((it) => it.id));
+    sel = copies[0].id;
+    selectedTrackId = null;
+    selectedTracks.clear();
+    commit();
   }
   function paste() {
-    if (
-      !clipboard?.length ||
-      clipboard.some((it) => !project!.tracks.some((t) => t.id === it.trackId))
-    )
-      return;
-    begin();
-    const first = Math.min(...clipboard.map((it) => it.start));
-    selectedIds.clear();
-    for (const it of clipboard) {
-      const copy = {...it, id: uid(), start: round(playhead + it.start - first)};
-      delete copy.trans;
-      insert(copy);
-      selectedIds.add(copy.id);
-      sel = copy.id;
-    }
-    selectedTrackId = null;
-    commit();
+    if (clipboard?.length)
+      placeCopies(clipboard, playhead - Math.min(...clipboard.map((it) => it.start)));
   }
   function remove() {
-    const ids = selectedIds.size ? selectedIds : new Set(sel ? [sel] : []);
+    const ids = new Set(operationItems().map((it) => it.id));
     if (!ids.size) return;
     begin();
     project!.items = project!.items.filter((it) => !ids.has(it.id));
@@ -622,9 +692,23 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     commit();
   }
 
-  function selectTrack(id: string) {
+  function selectTrack(id: string, toggle = false, range = false) {
     if (!project?.tracks.some((t) => t.id === id)) return;
-    selectedTrackId = id;
+    timelineActive = true;
+    if (range && trackAnchor && project!.tracks.some(t=>t.id===trackAnchor)) {
+      const ordered = project!.tracks.map((t) => t.id),
+        a = ordered.indexOf(trackAnchor),
+        b = ordered.indexOf(id);
+      selectedTracks = new Set(ordered.slice(Math.min(a, b), Math.max(a, b) + 1));
+    } else if (toggle) {
+      if (selectedTracks.has(id)) selectedTracks.delete(id);
+      else selectedTracks.add(id);
+      trackAnchor = id;
+    } else {
+      selectedTracks = new Set([id]);
+      trackAnchor = id;
+    }
+    selectedTrackId = selectedTracks.has(id) ? id : ([...selectedTracks][0] ?? null);
     sel = null;
     selectedIds.clear();
     renderTimelineSelection();
@@ -638,6 +722,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     commit();
   }
   function editTrackName(id: string) {
+    if (selectedTracks.size > 1) {
+      deps.notify(translate('editorGestures.singleOnly'), 'error');
+      return;
+    }
     const rail = [...box!.timelineCanvas.querySelectorAll<HTMLElement>('[data-rail]')].find(
       (el) => el.dataset.rail === id,
     );
@@ -669,40 +757,49 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     input.select();
   }
   function muteTrack(id: string) {
-    const track = project?.tracks.find((t) => t.id === id);
-    if (!track || track.type !== 'audio') return;
+    const targets = project!.tracks.filter(
+      (t) => (selectedTracks.has(id) ? selectedTracks.has(t.id) : t.id === id) && t.type === 'audio',
+    );
+    if (!targets.length) return;
     begin();
-    track.muted = !track.muted;
+    const muted = !targets.every((t) => t.muted);
+    for (const t of targets) t.muted = muted;
     scheduleSave();
     renderTimeline();
     renderPreviewFrame(false);
   }
   function soloTrack(id: string, multiple = false) {
-    if (!project?.tracks.some((t) => t.id === id && t.type === 'audio')) return;
-    const had = soloed.has(id),
-      only = soloed.size === 1;
+    const targets = project!.tracks
+      .filter(
+        (t) =>
+          (selectedTracks.has(id) ? selectedTracks.has(t.id) : t.id === id) && t.type === 'audio',
+      )
+      .map((t) => t.id);
+    if (!targets.length) return;
+    const all = targets.every((id) => soloed.has(id)),
+      only = soloed.size === targets.length;
     if (!multiple) soloed.clear();
-    if (multiple && had) soloed.delete(id);
-    else if (!had || (!multiple && !only)) soloed.add(id);
+    for (const id of targets) {
+      if (multiple && all) soloed.delete(id);
+      else if (!all || (!multiple && !only)) soloed.add(id);
+    }
     renderTimeline();
     renderPreviewFrame(false);
   }
-  function setTrackVolume(id: string, volume: number) {
-    const track = project?.tracks.find((t) => t.id === id);
-    if (!track || track.type !== 'audio' || !Number.isFinite(volume)) return;
-    begin();
-    track.volume = Math.max(0, Math.min(1, volume));
-    scheduleSave();
-    renderTimeline();
-    renderPreviewFrame(false);
+  function setTrackVolume(id:string,volume:number){
+    const targets=project!.tracks.filter(t=>(selectedTracks.has(id)?selectedTracks.has(t.id):t.id===id)&&t.type==='audio');
+    if(!targets.length||!Number.isFinite(volume))return;
+    begin();for(const track of targets)track.volume=Math.max(0,Math.min(1,volume));scheduleSave();renderTimeline();renderPreviewFrame(false);
   }
   function trackAudible(id: string) {
     return !project?.tracks.find((t) => t.id === id)?.muted && (!soloed.size || soloed.has(id));
   }
   function selectTrackContents(id: string) {
-    selectTrack(id);
-    selectedIds = new Set(items(id).map((it) => it.id));
-    sel = items(id)[0]?.id ?? null;
+    if (!selectedTracks.has(id)) selectTrack(id);
+    selectedIds = new Set(
+      project!.items.filter((it) => selectedTracks.has(it.trackId)).map((it) => it.id),
+    );
+    sel = [...selectedIds][0] ?? null;
     renderTimelineSelection();
     emit();
   }
@@ -722,6 +819,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function removeTrack(id: string) {
     const tr = project!.tracks.find(t => t.id === id);
+    if(selectedTracks.size>1){deps.notify(translate('editorGestures.singleOnly'),'error');return;}
     if (!tr || tr.type === 'text') return;
     if (tr.type === 'video' && videoTracks().length <= 1) return;
     begin();
@@ -733,7 +831,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function reset() {
     begin();
-    project = defaultProject();soloed.clear();selectedTrackId=null;selectedIds.clear();
+    project = defaultProject();soloed.clear();selectedTrackId=null;selectedIds.clear();selectedTracks.clear();
     sel = null;
     playhead = 0;
     setPlaying(false);
@@ -741,10 +839,32 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     commit();
   }
 
-  function select(id: string | null) {
+  function select(id: string | null, toggle = false, range = false) {
     selectedTrackId = null;
-    selectedIds = new Set(id ? [id] : []);
-    sel = id;
+    selectedTracks.clear();
+    if (id && range && itemAnchor && item(itemAnchor)) {
+      const order = project!.items
+        .slice()
+        .sort(
+          (a, b) =>
+            a.start - b.start ||
+            project!.tracks.findIndex((t) => t.id === a.trackId) -
+              project!.tracks.findIndex((t) => t.id === b.trackId) ||
+            a.id.localeCompare(b.id),
+        )
+        .map((it) => it.id);
+      const a = order.indexOf(itemAnchor),
+        b = order.indexOf(id);
+      selectedIds = new Set(order.slice(Math.min(a, b), Math.max(a, b) + 1));
+    } else if (id && toggle) {
+      if (selectedIds.has(id)) selectedIds.delete(id);
+      else selectedIds.add(id);
+      itemAnchor = id;
+    } else {
+      selectedIds = new Set(id ? [id] : []);
+      itemAnchor = id;
+    }
+    sel = id && selectedIds.has(id) ? id : ([...selectedIds][0] ?? null);
     renderTimelineSelection();
     renderTexts(playhead);
     emit();
@@ -1313,7 +1433,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function textDrag(e: PointerEvent, el: HTMLElement, id: string) {
     e.stopPropagation();
     e.preventDefault();
-    select(id);
+    timelineActive=true;
+    if(!selectedIds.has(id))select(id);
     const it = item(id);
     if (!it || !box) return;
     begin();
@@ -1340,6 +1461,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function inspectorChange(field: string, value: string | number | boolean) {
+    if(!requireSingle())return;
     const it = selItem();
     if (!it) return;
     if (it.kind === 'audio' && ['audioStream', 'volume', 'muted'].includes(field)) {
@@ -1368,6 +1490,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   }
 
   function trimSelected(boundary: Boundary) {
+    if(!requireSingle())return;
     const selected = selItem();
     const source = selected ? clipOf(selected) : null;
     const next = source?.duration && !source.unreadable
@@ -1477,8 +1600,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   // ── timeline rendering ──────────────────────────────────────────
   function zoom(factor: number) {
+    const scroll = box?.timelineScroll,
+      center = scroll ? (scroll.scrollLeft + (scroll.clientWidth - ED_RAIL) / 2) / pps : 0;
     pps = Math.max(ED_PPS_MIN, Math.min(ED_PPS_MAX, pps * factor));
     renderTimeline();
+    if (scroll) scroll.scrollLeft = Math.max(0, center * pps - (scroll.clientWidth - ED_RAIL) / 2);
   }
 
   function fit() {
@@ -1504,26 +1630,10 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (cur) cur.style.left = `${playhead * pps - 4.5}px`;
   }
 
-  function waveBars(seed: number, n: number) {
-    const out: number[] = [];
-    let s = seed * 9301 + 49297;
-    for (let i = 0; i < n; i++) {
-      s = (s * 9301 + 49297) % 233280;
-      out.push(0.18 + 0.82 * (s / 233280));
-    }
-    return out;
-  }
-
-  function waveSeed(slug: string) {
-    let h = 0;
-    for (let i = 0; i < (slug || '').length; i++) h = (h * 31 + slug.charCodeAt(i)) % 9973;
-    return h + 3;
-  }
-
   function itemHTML(it: EdItem) {
     const w = Math.max(8, it.dur * pps);
     const left = it.start * pps;
-    const selCls = sel === it.id ? ' selected' : '';
+    const selCls = (sel === it.id || selectedIds.has(it.id)) ? ' selected' : '';
     const miss = it.clipId && missing.has(it.clipId) ? ' missing' : '';
     const base = `data-item="${escAttr(it.id)}" style="left:${left}px;width:${w}px"`;
     const c = it.clipId ? clipOf(it) : null;
@@ -1532,15 +1642,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     if (it.kind === 'audio') {
       const stream = c?.audio_tracks?.find(track => track.index === (it.audioStream ?? 0));
       const title = stream?.title || translate('editor.recordedTrack', {number: (it.audioStream ?? 0) + 1});
-      const bars = waveBars(waveSeed(it.clipId || ''), Math.max(16, Math.round(it.dur * 3)));
-      const rects = bars
-        .map(
-          (b, i) =>
-            `<rect x="${i * 3}" y="${(10 - b * 8).toFixed(2)}" width="2" height="${(b * 16).toFixed(2)}" rx="1" fill="currentColor"/>`,
-        )
-        .join('');
       return `<div class="ed-item ed-item-audio${selCls}${miss}" data-muted="${Boolean(it.muted)}" ${base}>
-      <svg class="ed-wave" viewBox="0 0 ${bars.length * 3} 20" preserveAspectRatio="none">${rects}</svg>
+      <svg class="ed-wave" data-wave="${escAttr(it.id)}" viewBox="0 0 1024 64" preserveAspectRatio="none" aria-hidden="true"></svg>
       <span class="ed-item-name">${escHtml(name)} · ${escHtml(title)}</span>
       <div class="ed-handle l" data-handle="l"><div class="ed-handle-bar"></div></div>
       <div class="ed-handle r" data-handle="r"><div class="ed-handle-bar"></div></div>
@@ -1556,10 +1659,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     }
     // Lazy like the library list: a long timeline scrolls well past its own
     // width, and a thumbnail costs about 900 KB once decoded.
-    const thumb =
-      c && c.thumb_url
-        ? `<img src="${escAttr(c.thumb_url)}" loading="lazy" alt="" draggable="false">`
-        : '';
+    const count=Math.max(1,Math.min(16,Math.ceil(w/90)));
+    const thumb=c?`<div class="ed-filmstrip">${Array.from({length:count},(_,index)=>{const at=(it.offset??0)+it.dur*(index+.5)/count;return `<img src="/api/editor/previews/${encodeURIComponent(c.slug)}/frame?offset=${at.toFixed(3)}&v=${encodeURIComponent(c.media_id??c.video_url)}" loading="lazy" alt="" draggable="false">`;}).join('')}</div>`:'';
     return `<div class="ed-item ed-item-clip${selCls}${miss}" ${base}>
     ${thumb}<div class="ed-item-shade"></div>
     <div class="ed-item-hd">
@@ -1619,7 +1720,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         const junctions =
           tr.type === 'video' ? laneItems.filter(i => i.trans).map(junctionHTML).join('') : '';
         return `<div class="ed-track-row">
-      <div class="ed-rail ${tr.type}" tabindex="0" data-selected="${tr.id===selectedTrackId}" data-muted="${Boolean(tr.muted)}" data-solo="${soloed.has(tr.id)}" data-rail="${escAttr(tr.id)}" title="${escAttr(tr.label+' · '+translate('editor.trackOptionsHint'))}">
+      <div class="ed-rail ${tr.type}" tabindex="0" data-selected="${selectedTracks.has(tr.id)}" data-muted="${Boolean(tr.muted)}" data-solo="${soloed.has(tr.id)}" data-rail="${escAttr(tr.id)}" title="${escAttr(tr.label+' · '+translate('editor.trackOptionsHint'))}">
         <span class="ed-rail-label">${escHtml(tr.label)}</span>
         ${tr.type==='audio'?`<span class="ed-track-controls"><button type="button" data-track-mute="${escAttr(tr.id)}" aria-label="${escAttr(translate('audioWorkflow.trackMute',{name:tr.label}))}" aria-pressed="${Boolean(tr.muted)}" title="${escAttr(translate('audioWorkflow.muteTrack'))} (Shift+M)">M</button><button type="button" data-track-solo="${escAttr(tr.id)}" aria-label="${escAttr(translate('audioWorkflow.trackSolo',{name:tr.label}))}" aria-pressed="${soloed.has(tr.id)}" title="${escAttr(translate('audioWorkflow.soloHelp'))} (Shift+S)">S</button><input type="range" data-playback-control="volume" data-track-volume="${escAttr(tr.id)}" min="0" max="100" step="1" value="${Math.round((tr.volume??1)*100)}" aria-label="${escAttr(translate('audioWorkflow.trackVolume',{name:tr.label}))}" title="${Math.round((tr.volume??1)*100)}%"></span>`:''}
         <span class="ed-rail-type">${tr.type==='audio'?'A'+(project!.tracks.filter(t=>t.type==='audio').findIndex(t=>t.id===tr.id)+1):tr.type.slice(0,3).toUpperCase()}</span>
@@ -1644,14 +1745,78 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     box.timelineCanvas.style.width = `${ED_RAIL + totalW}px`;
 
     wireTimeline();
+    hydrateWaveforms();
     updatePlayheadDom();
     emit();
   }
 
+  const waves=new Map<string,number[]>();const waveJobs=new Set<string>();const waveFailures=new Set<string>();
+  let waveObserver:IntersectionObserver|null=null;
+  function hydrateWaveforms() {
+    waveObserver?.disconnect();
+    const load = async (el: SVGElement) => {
+      const it = item(el.dataset.wave ?? null),
+        clip = it ? clipOf(it) : null;
+      if (!it || !clip) return;
+      const url = `/api/editor/previews/${encodeURIComponent(clip.slug)}/wave?offset=${it.offset ?? 0}&duration=${it.dur}&stream=${it.audioStream ?? 0}&v=${encodeURIComponent(clip.media_id ?? clip.video_url)}`;
+      const draw = (peaks: number[]) => {
+        el.innerHTML = peaks
+          .map(
+            (peak, index) =>
+              `<rect x="${index}" y="${32 - Math.sqrt(peak) * 31}" width="1" height="${Math.sqrt(peak) * 62}" fill="currentColor"/>`,
+          )
+          .join('');
+      };
+      if (waves.has(url)) {
+        draw(waves.get(url)!);
+        return;
+      }
+      if (waveJobs.has(url) || waveFailures.has(url)) return;
+      waveJobs.add(url);
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error();
+        const data = await response.json();
+        if (
+          !Array.isArray(data.peaks) ||
+          data.peaks.length !== 1024 ||
+          !data.peaks.every(
+            (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1,
+          )
+        )
+          throw new Error();
+        waves.set(url, data.peaks);
+        if (waves.size > 128) waves.delete(waves.keys().next().value!);
+        if (mounted) hydrateWaveforms();
+      } catch {
+        waveFailures.add(url);
+      } finally {
+        waveJobs.delete(url);
+      }
+    };
+    if (typeof IntersectionObserver !== 'undefined') {
+      waveObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries)
+            if (entry.isIntersecting) {
+              waveObserver?.unobserve(entry.target);
+              void load(entry.target as SVGElement);
+            }
+        },
+        {root: box?.timelineScroll, rootMargin: '200px'},
+      );
+      box?.timelineCanvas
+        .querySelectorAll<SVGElement>('[data-wave]')
+        .forEach((el) => waveObserver!.observe(el));
+    }
+  }
+
   function renderTimelineSelection() {
     if (!box) return;
-    box.timelineCanvas.querySelectorAll<HTMLElement>('[data-rail]').forEach(rail=>rail.dataset.selected=String(rail.dataset.rail===selectedTrackId));
-    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-item').forEach(el => {
+    box.timelineCanvas
+      .querySelectorAll<HTMLElement>('[data-rail]')
+      .forEach((rail) => (rail.dataset.selected = String(selectedTracks.has(rail.dataset.rail!))));
+    box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-item').forEach((el) => {
       el.classList.toggle('selected', el.dataset.item === sel || selectedIds.has(el.dataset.item!));
     });
   }
@@ -1659,6 +1824,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   // ── timeline wiring ─────────────────────────────────────────────
   function startScrub(surface: HTMLElement, event: PointerEvent) {
     if (event.button !== 0) return;
+    timelineActive=true;
     event.preventDefault();
     surface.focus({preventScroll:true});
     capture(surface,event);
@@ -1689,7 +1855,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     box.timelineCanvas.querySelectorAll<HTMLElement>('.ed-rail').forEach((rail) => {
       rail.addEventListener('pointerdown', (e) => {
         if (!(e.target as Element).closest('button,input')) {
-          selectTrack(rail.dataset.rail!);
+          selectTrack(rail.dataset.rail!, e.ctrlKey || e.metaKey, e.shiftKey);
           rail.focus({preventScroll: true});
         }
       });
@@ -1697,16 +1863,16 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         if (!(e.target as Element).closest('button,input')) editTrackName(rail.dataset.rail!);
       });
       rail.querySelector<HTMLButtonElement>('[data-track-mute]')?.addEventListener('click', () => {
-        selectTrack(rail.dataset.rail!);
+        if (!selectedTracks.has(rail.dataset.rail!)) selectTrack(rail.dataset.rail!);
         muteTrack(rail.dataset.rail!);
       });
       rail.querySelector<HTMLButtonElement>('[data-track-solo]')?.addEventListener('click', (e) => {
-        selectTrack(rail.dataset.rail!);
+        if (!selectedTracks.has(rail.dataset.rail!)) selectTrack(rail.dataset.rail!);
         soloTrack(rail.dataset.rail!, e.shiftKey);
       });
       const gain = rail.querySelector<HTMLInputElement>('[data-track-volume]');
       let editing = false;
-      gain?.addEventListener('pointerdown',()=>selectTrack(rail.dataset.rail!));
+      gain?.addEventListener('pointerdown', () => selectTrack(rail.dataset.rail!));
       gain?.addEventListener('input', () => {
         const track = project!.tracks.find((t) => t.id === rail.dataset.rail)!;
         if (!editing) {
@@ -1729,6 +1895,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
       const trackId = lane.dataset.lane!;
       lane.addEventListener('pointerdown', (e) => {
         if (e.target === lane && e.button === 0) {
+          timelineActive = true;
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            startBoxSelection(lane, e);
+            return;
+          }
           select(null);
           startScrub(lane, e);
         }
@@ -1791,55 +1962,175 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function itemPointerDown(e: PointerEvent, el: HTMLElement, id: string) {
     if (e.button !== 0) return;
+    timelineActive = true;
+    e.stopPropagation();
+    el.closest<HTMLElement>('.ed-lane')?.focus({preventScroll: true});
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      select(id, e.ctrlKey || e.metaKey, e.shiftKey);
+      return;
+    }
+    const wasSelected = selectedIds.has(id);
+    if (!wasSelected) select(id);
     const it = item(id);
     if (!it) return;
-    e.stopPropagation();
-    select(id);
-
-    const handle = (e.target as HTMLElement).closest('[data-handle]') as HTMLElement | null;
-    capture(el, e);
-
+    const handle = (e.target as Element).closest<HTMLElement>('[data-handle]');
     if (handle) {
+      if (!requireSingle()) return;
+      capture(el, e);
       trimDrag(e, el, it, handle.dataset.handle!);
       return;
     }
-
-    const sx = e.clientX;
-    const sy = e.clientY;
-    const os = it.start;
-    const tr = project!.tracks.find(t => t.id === it.trackId)!;
-    let moved = false;
-    let targetTrack = it.trackId;
-    let targetStart = it.start;
-
-    const lanes = [...box!.timelineCanvas.querySelectorAll<HTMLElement>('.ed-lane')].filter(l => {
-      const lt = project!.tracks.find(t => t.id === l.dataset.lane);
-      return lt && lt.type === tr.type;
-    });
-
-    const mv = (ev: PointerEvent) => {
-      if (Math.abs(ev.clientX - sx) > 3 || Math.abs(ev.clientY - sy) > 8) moved = true;
+    const originals = operationItems().map((it) => ({...it})),
+      ids = new Set(originals.map((it) => it.id));
+    const sx = e.clientX,
+      sy = e.clientY;
+    let moved = false,
+      candidates = originals;
+    capture(el, e);
+    const move = (event: PointerEvent) => {
+      if (Math.abs(event.clientX - sx) > 3 || Math.abs(event.clientY - sy) > 3) moved = true;
       if (!moved) return;
-      targetStart = snapTime(Math.max(0, os + (ev.clientX - sx) / pps), id);
-      for (const l of lanes) {
-        const r = l.getBoundingClientRect();
-        if (ev.clientY >= r.top - 3 && ev.clientY <= r.bottom + 3) targetTrack = l.dataset.lane!;
+      let delta = (event.clientX - sx) / pps;
+      const min = Math.min(...originals.map((it) => it.start));
+      delta = Math.max(-min, delta);
+      const points = [
+        0,
+        playhead,
+        ...project!.items
+          .filter((it) => !ids.has(it.id))
+          .flatMap((it) => [it.start, it.start + it.dur]),
+      ];
+      let correction = 8 / pps;
+      if (!event.altKey)
+        for (const original of originals)
+          for (const edge of [original.start, original.start + original.dur])
+            for (const point of points) {
+              const distance = point - edge - delta;
+              if (Math.abs(distance) < Math.abs(correction)) {
+                correction = distance;
+              }
+            }
+      if (Math.abs(correction) < 8 / pps) delta = Math.max(-min, delta + correction);
+      const compatible = project!.tracks.filter(
+        (t) => t.type === project!.tracks.find((t) => t.id === it.trackId)!.type,
+      );
+      const target = [...box!.timelineCanvas.querySelectorAll<HTMLElement>('.ed-lane')].find(
+        (lane) => {
+          const r = lane.getBoundingClientRect();
+          return event.clientY >= r.top && event.clientY < r.bottom;
+        },
+      );
+      const shift = target
+        ? compatible.findIndex((t) => t.id === target.dataset.lane) -
+          compatible.findIndex((t) => t.id === it.trackId)
+        : 0;
+      const homogeneous = originals.every((o) => compatible.some((t) => t.id === o.trackId));
+      candidates = originals.map((original) => ({
+        ...original,
+        start: round(original.start + delta),
+        trackId:
+          shift && homogeneous
+            ? (compatible[compatible.findIndex((t) => t.id === original.trackId) + shift]?.id ?? '')
+            : original.trackId,
+      }));
+      if (
+        target &&
+        target.dataset.lane !== it.trackId &&
+        (!homogeneous || !compatible.some((t) => t.id === target.dataset.lane))
+      )
+        candidates = [];
+      for (const candidate of candidates) {
+        const node = box!.timelineCanvas.querySelector<HTMLElement>(
+          '[data-item="' + candidate.id + '"]',
+        );
+        if (node) node.style.left = candidate.start * pps + 'px';
       }
-      el.style.left = `${targetStart * pps}px`;
-      el.style.opacity = targetTrack !== it.trackId ? '0.65' : '';
     };
-    const up = () => {
-      el.removeEventListener('pointermove', mv);
-      el.removeEventListener('pointerup', up);
-      if (!moved) return;
+    const cleanup = () => {
+      el.removeEventListener('pointermove', move);
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+        el.removeEventListener(type, finish);
+      pointerCleanups.delete(cleanup);
+    };
+    const finish = (event: Event) => {
+      cleanup();
+      if (event.type !== 'pointerup') {
+        renderTimeline();
+        return;
+      }
+      if (!moved) {
+        if (wasSelected) select(id);
+        return;
+      }
+      if (!candidates.length || !safePlacement(candidates, ids)) {
+        unsafeGroup();
+        renderTimeline();
+        return;
+      }
       begin();
-      it.start = targetStart;
-      it.trackId = targetTrack;
-      resolve(it);
+      for (const candidate of candidates) Object.assign(item(candidate.id)!, candidate);
       commit();
     };
-    el.addEventListener('pointermove', mv);
-    el.addEventListener('pointerup', up);
+    pointerCleanups.add(cleanup);
+    el.addEventListener('pointermove', move);
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+      el.addEventListener(type, finish);
+  }
+
+  // Modified background drags select; ordinary background drags keep scrubbing.
+  function startBoxSelection(surface: HTMLElement, event: PointerEvent) {
+    event.preventDefault();
+    surface.focus({preventScroll: true});
+    capture(surface, event);
+    const initial = event.ctrlKey || event.metaKey ? new Set(selectedIds) : new Set<string>();
+    const sx = event.clientX,
+      sy = event.clientY;
+    const rect = document.createElement('div');
+    rect.className = 'ed-selection-box';
+    document.body.append(rect);
+    const move = (ev: PointerEvent) => {
+      const left = Math.min(sx, ev.clientX),
+        top = Math.min(sy, ev.clientY),
+        right = Math.max(sx, ev.clientX),
+        bottom = Math.max(sy, ev.clientY);
+      Object.assign(rect.style, {
+        left: left + 'px',
+        top: top + 'px',
+        width: right - left + 'px',
+        height: bottom - top + 'px',
+      });
+      selectedIds = new Set(initial);
+      box!.timelineCanvas.querySelectorAll<HTMLElement>('[data-item]').forEach((node) => {
+        const r = node.getBoundingClientRect();
+        if (r.right > left && r.left < right && r.bottom > top && r.top < bottom)
+          selectedIds.add(node.dataset.item!);
+      });
+      sel = [...selectedIds][0] ?? null;
+      selectedTracks.clear();
+      selectedTrackId = null;
+      renderTimelineSelection();
+      emit();
+    };
+    const cleanup = () => {
+      rect.remove();
+      surface.removeEventListener('pointermove', move);
+      for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+        surface.removeEventListener(type, finish);
+      pointerCleanups.delete(cleanup);
+    };
+    const finish = (ev: Event) => {
+      if (ev.type === 'pointerup') move(ev as PointerEvent);
+      else {
+        selectedIds = initial;
+        sel = [...initial][0] ?? null;
+        renderTimelineSelection();
+      }
+      cleanup();
+    };
+    pointerCleanups.add(cleanup);
+    surface.addEventListener('pointermove', move);
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+      surface.addEventListener(type, finish);
   }
 
   function trimDrag(e: PointerEvent, el: HTMLElement, it: EdItem, side: string) {
@@ -2041,8 +2332,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         en === '-'
           ? '<div class="ed-menu-sep"></div>'
           : `<button role="menuitem" class="ed-menu-item${en.danger ? ' danger' : ''}" data-i="${i}" ${en.dis ? 'disabled' : ''}>
-          <span>${escHtml(en.label)}</span>${en.kbd ? `<span class="kbd-hint">${escHtml(en.kbd)}</span>` : ''}
-        </button>`,
+            <span>${escHtml(en.label)}</span>${en.kbd ? `<span class="kbd-hint">${escHtml(en.kbd)}</span>` : ''}
+          </button>`,
       )
       .join('');
     document.body.appendChild(el);
@@ -2099,10 +2390,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function openItemMenu(e: MouseEvent, id: string) {
     e.preventDefault();
     e.stopPropagation();
-    select(id);
+    timelineActive = true;
+    if (!selectedIds.has(id)) select(id);
     const it = item(id);
     if (!it) return;
-    const canSplit = playhead > it.start + 0.2 && playhead < it.start + it.dur - 0.2;
+    const canSplit = snapshot().canSplit;
     menu(e.clientX, e.clientY, [
       {label: translate('editor.menuSplit'), kbd: 'S', fn: split, dis: !canSplit},
       ...(it.kind === 'clip'
@@ -2152,7 +2444,8 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
     e.stopPropagation();
     const tr = project!.tracks.find((t) => t.id === trackId);
     if (!tr) return;
-    selectTrack(trackId);
+    timelineActive = true;
+    if (!selectedTracks.has(trackId)) selectTrack(trackId);
     const removable = tr.type !== 'text' && !(tr.type === 'video' && videoTracks().length <= 1);
     menu(e.clientX, e.clientY, [
       {label: translate('audioWorkflow.renameTrack'), kbd: 'F2', fn: () => editTrackName(trackId)},
@@ -2191,6 +2484,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function renderLibrary() {
     if (!box) return;
     const scroll = box.libraryScroll;
+    scroll.onpointerdown=()=>{timelineActive=false;};
     if (tab === 'library') {
       const q = query.trim().toLowerCase();
       let list = clips().filter(c => (c.duration ?? 0) > 0);
@@ -2343,6 +2637,17 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
   function onKeyDown(e: KeyboardEvent) {
     if (!mounted || !project) return false;
     if (e.altKey) return false;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      if (!timelineActive || (e.target as Element)?.closest?.('.ed-lib-clip,.ed-lib-grid'))
+        return false;
+      selectedIds = new Set(project.items.map((it) => it.id));
+      sel = [...selectedIds][0] ?? null;
+      selectedTracks.clear();
+      selectedTrackId = null;
+      renderTimelineSelection();
+      emit();
+      return true;
+    }
     if (!e.ctrlKey && !e.metaKey && e.shiftKey && ['m', 's'].includes(e.key.toLowerCase())) {
       const trackId = selectedTrackId ?? selItem()?.trackId;
       if (!trackId || !project.tracks.some((t) => t.id === trackId && t.type === 'audio'))
@@ -2364,6 +2669,7 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
             editTrackName(selectedTrackId);
             return;
           }
+          if(!requireSingle())return;
           const focused = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
             '.ed-lib-clip',
           );
@@ -2439,9 +2745,11 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
 
   function destroy() {
     mounted = false;
+    for(const cleanup of pointerCleanups)cleanup();
     unbindKeyboard?.();
     unbindKeyboard = undefined;
     scrub.cancel();
+    waveObserver?.disconnect();
     setPlaying(false);
     if (raf) cancelAnimationFrame(raf);
     raf = null;

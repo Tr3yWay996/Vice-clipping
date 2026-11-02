@@ -1314,5 +1314,11 @@
     "detachedHelp": "Áudio separado. Os fluxos individuais estão audíveis; a mixagem combinada fica silenciada para evitar áudio duplicado. Use M/S e os controles dos itens para escolher o que ouvir.",
     "separateExport": "Exportar faixas de áudio separadas com nomes",
     "shortcuts": "Espaço: reproduzir/pausar (segure para acelerar); setas: posição/volume; Shift+Esquerda/Direita: busca precisa; I/O: cortar; S: dividir; F2: renomear faixa ou mídia; Shift+M/S: silenciar/solo; Ctrl+Z: desfazer; Ctrl+Shift+Z ou Ctrl+Y: refazer; Ctrl+C/V: copiar/colar; Delete: excluir; Escape: fechar menu ou limpar seleção."
-  }
+  },
+  "editorGestures": {
+  "selectionCount": "{count} itens selecionados",
+"unsafePlacement": "Este grupo não pode ser colocado aqui sem colisões ou faixas incompatíveis. Nada foi movido.",
+  "singleOnly": "Selecione um único item ou faixa para esta operação.",
+  "help": "Ctrl-clique alterna seleção; Shift-clique seleciona intervalo; Ctrl+A seleciona tudo. Shift-arrastar no vazio seleciona uma caixa; Ctrl-arrastar adiciona. Arrastar normalmente busca. Alt-arrastar ignora encaixe."
+}
 }

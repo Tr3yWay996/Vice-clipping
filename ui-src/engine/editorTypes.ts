@@ -54,6 +54,7 @@ export interface EdSnapshot {
   duration: number;
   pps: number;
   selected: EdItem | null;
+  selectionCount:number;
   selectedTrack?:EdTrack|null;
   canSplit: boolean;
   canDetach: boolean;

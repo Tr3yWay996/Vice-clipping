@@ -519,3 +519,280 @@ it('unsolos only the clicked track from a multiple-solo context menu',()=>{
  [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')].find(button=>button.textContent?.includes('Unsolo Track'))!.click();
  expect(root.querySelector('[data-track-solo=A1]')?.getAttribute('aria-pressed')).toBe('false');expect(root.querySelector(`[data-track-solo="${other}"]`)?.getAttribute('aria-pressed')).toBe('true');
 });
+
+describe('complete timeline selection workflows', () => {
+  const pointer = (el: Element, type: string, x = 100, y = 10, extra: MouseEventInit = {}) =>
+    el.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: x,
+        clientY: y,
+        ...extra,
+      }),
+    );
+  const node = (id: string) => root.querySelector<HTMLElement>(`[data-item="${id}"]`)!;
+  const selected = () =>
+    [...root.querySelectorAll<HTMLElement>('.ed-item.selected')]
+      .map((el) => el.dataset.item)
+      .sort();
+  function three() {
+    const p = engine.project()!;
+    p.items = ['one', 'two', 'three'].map((id, i) => ({
+      id,
+      kind: 'clip',
+      trackId: 'V1',
+      clipId: 'source',
+      start: i * 5,
+      dur: 2,
+      offset: 0,
+    }));
+    engine.setClips(previewClips);
+  }
+  const click = (id: string, extra: MouseEventInit = {}) => {
+    const el = node(id);
+    pointer(el, 'pointerdown', 100, 10, extra);
+    pointer(el, 'pointerup', 100, 10, extra);
+  };
+  it('selects all three clips with Ctrl+A after a normal timeline click and clears with Escape', () => {
+    three();
+    click('one');
+    key('a', {ctrlKey: true});
+    expect(selected()).toEqual(['one', 'three', 'two']);
+    key('Escape');
+    expect(selected()).toEqual([]);
+  });
+  it('toggles nonadjacent items and selects a chronological Shift range across lanes', () => {
+    three();
+    click('one');
+    click('three', {ctrlKey: true});
+    expect(selected()).toEqual(['one', 'three']);
+    click('three', {ctrlKey: true});
+    expect(selected()).toEqual(['one']);
+    click('one');
+    click('three', {shiftKey: true});
+    expect(selected()).toEqual(['one', 'three', 'two']);
+  });
+  it('drags a selected group as one transaction, preserving offsets and leaving unrelated items alone', () => {
+    three();
+    click('one');
+    click('two', {ctrlKey: true});
+    const el = node('one');
+    pointer(el, 'pointerdown', 100, 10);
+    pointer(el, 'pointermove', 124, 10, {altKey: true});
+    pointer(el, 'pointerup', 124, 10);
+    expect(engine.project()!.items.map((it) => it.start)).toEqual([2, 7, 10]);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items.map((it) => it.start)).toEqual([0, 5, 10]);
+    key('y', {ctrlKey: true});
+    expect(engine.project()!.items.map((it) => it.start)).toEqual([2, 7, 10]);
+  });
+  it('rejects a whole group on collision and cancels pointer drags without partial changes', () => {
+    three();
+    click('one');
+    click('two', {ctrlKey: true});
+    const original = JSON.stringify(engine.project());
+    let el = node('one');
+    pointer(el, 'pointerdown');
+    pointer(el, 'pointermove', 160, 10, {altKey: true});
+    pointer(el, 'pointerup', 160, 10);
+    expect(JSON.stringify(engine.project())).toBe(original);
+    expect(notify).toHaveBeenCalled();
+    el = node('one');
+    pointer(el, 'pointerdown');
+    pointer(el, 'pointermove', 124, 10, {altKey: true});
+    pointer(el, 'pointercancel', 124);
+    expect(JSON.stringify(engine.project())).toBe(original);
+  });
+  it('copies and pastes all three with relative timing and rejects a colliding paste atomically', () => {
+    three();
+    click('one');
+    key('a', {ctrlKey: true});
+    key('c', {ctrlKey: true});
+    engine.seek(20);
+    key('v', {ctrlKey: true});
+    expect(engine.project()!.items.map((it) => it.start)).toEqual([0, 5, 10, 20, 25, 30]);
+    const original = JSON.stringify(engine.project());
+    key('v', {ctrlKey: true});
+    expect(JSON.stringify(engine.project())).toBe(original);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items).toHaveLength(3);
+  });
+  it('duplicates the entire selection and deletes/restores it in one undo transaction', () => {
+    three();
+    click('one');
+    key('a', {ctrlKey: true});
+    key('d', {ctrlKey: true});
+    expect(engine.project()!.items).toHaveLength(6);
+    expect(selected()).toHaveLength(3);
+    const copies = engine
+      .project()!
+      .items.slice(3)
+      .map((it) => it.start);
+    expect(copies[1] - copies[0]).toBe(5);
+    expect(copies[2] - copies[0]).toBe(10);
+    key('Delete');
+    expect(engine.project()!.items).toHaveLength(3);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items).toHaveLength(6);
+  });
+  it('preserves a right-clicked selection for group delete and undo', () => {
+    three();
+    click('one');
+    click('three', {ctrlKey: true});
+    node('one').dispatchEvent(new MouseEvent('contextmenu', {bubbles: true}));
+    expect(selected()).toEqual(['one', 'three']);
+    [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')]
+      .find((button) => button.textContent?.includes('Delete'))!
+      .click();
+    expect(engine.project()!.items.map((it) => it.id)).toEqual(['two']);
+    key('z', {ctrlKey: true});
+    expect(engine.project()!.items).toHaveLength(3);
+  });
+  it('selects multiple headers with Ctrl and Shift and selects their combined contents', () => {
+    three();
+    engine
+      .project()!
+      .items.push({
+        id: 'audio',
+        kind: 'audio',
+        trackId: 'A1',
+        clipId: 'source',
+        start: 0,
+        dur: 2,
+        offset: 0,
+      });
+    engine.setClips(previewClips);
+    const header = (id: string) => root.querySelector<HTMLElement>(`[data-rail=${id}]`)!;
+    pointer(header('V1'), 'pointerdown');
+    pointer(header('A1'), 'pointerdown', 100, 10, {ctrlKey: true});
+    expect(root.querySelectorAll('[data-rail][data-selected=true]')).toHaveLength(2);
+    header('A1').dispatchEvent(new MouseEvent('contextmenu', {bubbles: true}));
+    [...document.querySelectorAll<HTMLButtonElement>('[role=menuitem]')]
+      .find((button) => button.textContent?.includes('Select Track Contents'))!
+      .click();
+    expect(selected()).toHaveLength(4);
+    key('Escape');
+    pointer(header('V1'), 'pointerdown');
+    pointer(header('T1'), 'pointerdown', 100, 10, {shiftKey: true});
+    expect(root.querySelectorAll('[data-rail][data-selected=true]')).toHaveLength(3);
+  });
+  it('splits all intersecting selected items across audio/video lanes and undoes together', () => {
+    engine.select('v');
+    key('a', {ctrlKey: true}); // API selection alone does not activate timeline: use pointer.
+    pointer(node('v'), 'pointerdown');
+    pointer(node('v'), 'pointerup');
+    key('a', {ctrlKey: true});
+    key('s');
+    expect(engine.project()!.items.filter((it) => it.start === 8)).toHaveLength(2);
+    key('z', {ctrlKey: true});
+    expect(engine.project()).toEqual(fixture());
+  });
+  it('keeps input Ctrl+A native and supports additive drag-box selection without moving the playhead', () => {
+    three();
+    click('one');
+    engine.selectTrack('V1');
+    key('F2');
+    const input = root.querySelector<HTMLInputElement>('.ed-track-name')!;
+    expect(key('a', {ctrlKey: true}, input).defaultPrevented).toBe(false);
+    key('Escape', {}, input);
+    const lane = root.querySelector<HTMLElement>('[data-lane=V1]')!;
+    const before = engine.snapshot().playhead;
+    pointer(lane, 'pointerdown', 0, 0, {shiftKey: true});
+    pointer(lane, 'pointermove', 500, 30, {shiftKey: true});
+    pointer(lane, 'pointerup', 500, 30, {shiftKey: true});
+    expect(selected()).toHaveLength(3);
+    expect(engine.snapshot().playhead).toBe(before);
+    expect(document.querySelector('.ed-selection-box')).toBeNull();
+  });
+  it('moves groups between compatible lanes and persists a valid selection-edited project', async () => {
+    three();
+    engine.addTrack('video');
+    const id = engine.project()!.tracks.find((t) => t.type === 'video' && t.id !== 'V1')!.id;
+    engine.setClips(previewClips);
+    const lane = root.querySelector<HTMLElement>(`[data-lane="${id}"]`)!;
+    vi.spyOn(lane, 'getBoundingClientRect').mockReturnValue({
+      top: 60,
+      bottom: 110,
+      left: 0,
+      right: 1000,
+      width: 1000,
+      height: 50,
+      x: 0,
+      y: 60,
+      toJSON() {},
+    });
+    click('one');
+    click('two', {ctrlKey: true});
+    const el = node('one');
+    pointer(el, 'pointerdown');
+    pointer(el, 'pointermove', 124, 80, {altKey: true});
+    pointer(el, 'pointerup', 124, 80);
+    expect(
+      engine
+        .project()!
+        .items.slice(0, 2)
+        .every((it) => it.trackId === id),
+    ).toBe(true);
+    await engine.saveNow();
+    const saved = JSON.parse(
+      String(
+        vi
+          .mocked(fetch)
+          .mock.calls.filter(([, init]) => init?.method === 'POST')
+          .pop()![1]!.body,
+      ),
+    );
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({project: saved}),
+    } as Response);
+    await engine.load();
+    expect(engine.project()).toEqual(saved);
+  });
+});
+it('renders progressing video frames and uses real per-stream waveform data without random placeholders', async () => {
+  const observed: Element[] = [];
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(private callback: (entries: unknown[]) => void) {}
+      observe(target: Element) {
+        observed.push(target);
+        this.callback([{target, isIntersecting: true}]);
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const peaks = Array.from({length: 1024}, (_, i) => (i < 512 ? 0 : 1));
+  vi.mocked(fetch).mockImplementation(
+    async (input) =>
+      ({
+        ok: true,
+        json: async () => (String(input).includes('/wave?') ? {peaks} : {project: fixture()}),
+      }) as Response,
+  );
+  engine.project()!.items.find((it) => it.id === 'a')!.audioStream = 1;
+  engine.setClips(previewClips);
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  const urls = [...root.querySelectorAll<HTMLImageElement>('[data-item=v] .ed-filmstrip img')].map(
+    (img) => img.src,
+  );
+  expect(urls.length).toBeGreaterThan(1);
+  expect(new Set(urls).size).toBe(urls.length);
+  expect(urls.every((url) => url.includes('/frame?offset='))).toBe(true);
+  const bars = root.querySelectorAll('[data-wave=a] rect');
+  expect(bars).toHaveLength(1024);
+  expect(bars[0].getAttribute('height')).toBe('0');
+  expect(bars[1023].getAttribute('height')).toBe('62');
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([url]) => String(url).includes('offset=2&duration=10&stream=1')),
+  ).toBe(true);
+  expect(observed.length).toBeGreaterThan(0);
+});
