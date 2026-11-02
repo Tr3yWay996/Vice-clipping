@@ -1759,13 +1759,9 @@ export function createEditorEngine(deps: EditorDeps): EditorEngine {
         clip = it ? clipOf(it) : null;
       if (!it || !clip) return;
       const url = `/api/editor/previews/${encodeURIComponent(clip.slug)}/wave?offset=${it.offset ?? 0}&duration=${it.dur}&stream=${it.audioStream ?? 0}&v=${encodeURIComponent(clip.media_id ?? clip.video_url)}`;
-      const draw = (peaks: number[]) => {
-        el.innerHTML = peaks
-          .map(
-            (peak, index) =>
-              `<rect x="${index}" y="${32 - Math.sqrt(peak) * 31}" width="1" height="${Math.sqrt(peak) * 62}" fill="currentColor"/>`,
-          )
-          .join('');
+      const draw = (peaks:number[]) => {
+        const segments=peaks.map((peak,index)=>`M${index} ${32-Math.sqrt(peak)*31}v${Math.sqrt(peak)*62}`).join(' ');
+        el.innerHTML=`<path d="${segments}" stroke="currentColor" stroke-width="1" fill="none"/>`;
       };
       if (waves.has(url)) {
         draw(waves.get(url)!);

@@ -40,7 +40,8 @@ The seeded decorative waveform and stretched cover thumbnail are removed.
 Audio items request a real 1,024-bin peak envelope for their chosen audio stream,
 source offset, and duration. It uses stereo peak magnitudes from an 8 kHz decoded
 preview, displayed with a square-root amplitude scale. This is an overview rather
-than a sample-accurate mastering display. Silent regions remain flat.
+than a sample-accurate mastering display. Silent regions remain flat. Each envelope uses one SVG path, avoiding thousands
+of individual DOM elements per audio item.
 
 Video items show up to sixteen small frames sampled progressively through the
 item's source interval. Source trims update both previews. Images are lazy-loaded;

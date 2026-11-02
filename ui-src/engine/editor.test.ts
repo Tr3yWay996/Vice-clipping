@@ -785,10 +785,8 @@ it('renders progressing video frames and uses real per-stream waveform data with
   expect(urls.length).toBeGreaterThan(1);
   expect(new Set(urls).size).toBe(urls.length);
   expect(urls.every((url) => url.includes('/frame?offset='))).toBe(true);
-  const bars = root.querySelectorAll('[data-wave=a] rect');
-  expect(bars).toHaveLength(1024);
-  expect(bars[0].getAttribute('height')).toBe('0');
-  expect(bars[1023].getAttribute('height')).toBe('62');
+  const paths=root.querySelectorAll('[data-wave=a] path');expect(paths).toHaveLength(1);
+  const envelope=paths[0].getAttribute('d')!;expect(envelope).toContain('M0 32v0');expect(envelope).toContain('M1023 1v62');
   expect(
     vi
       .mocked(fetch)
