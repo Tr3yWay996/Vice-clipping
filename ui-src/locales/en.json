@@ -1450,5 +1450,11 @@
     "detachedHelp": "Audio detached. Separate streams are audible; a combined mix is muted to avoid doubling. Use track M/S and item controls to choose what you hear.",
     "separateExport": "Export separate named audio tracks",
     "shortcuts": "Space: play/pause (hold to boost); arrows: seek/volume; Shift+Left/Right: fine seek; I/O: trim; S: split; F2: rename selected track or media; Shift+M/S: track mute/solo; Ctrl+Z: undo; Ctrl+Shift+Z or Ctrl+Y: redo; Ctrl+C/V: copy/paste; Delete: delete; Escape: close menu or clear selection."
-  }
+  },
+  "editorGestures": {
+  "selectionCount": "{count} items selected",
+"unsafePlacement": "This group cannot be placed here without collisions or incompatible tracks. Nothing was moved.",
+  "singleOnly": "Select a single item or track for this operation.",
+  "help": "Ctrl-click toggles selection; Shift-click selects a time-ordered range. Ctrl+A selects the timeline. Shift-drag empty space selects a box; Ctrl-drag adds a box. Plain dragging scrubs. Alt-drag bypasses snapping."
+}
 }

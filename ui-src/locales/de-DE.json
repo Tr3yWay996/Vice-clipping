@@ -1382,5 +1382,11 @@
     "detachedHelp": "Audio getrennt. Einzelne Streams sind hörbar; ein kombinierter Mix ist stumm, um doppelte Wiedergabe zu vermeiden. Wähle mit M/S und den Elementreglern, was du hörst.",
     "separateExport": "Separate benannte Audiospuren exportieren",
     "shortcuts": "Leertaste: Wiedergabe/Pause (halten zum Beschleunigen); Pfeile: Position/Lautstärke; Umschalt+Links/Rechts: fein suchen; I/O: trimmen; S: teilen; F2: Spur oder Medium umbenennen; Umschalt+M/S: stumm/solo; Strg+Z: rückgängig; Strg+Umschalt+Z oder Strg+Y: wiederholen; Strg+C/V: kopieren/einfügen; Entf: löschen; Esc: Menü schließen oder Auswahl aufheben."
-  }
+  },
+  "editorGestures": {
+  "selectionCount": "{count} Elemente ausgewählt",
+"unsafePlacement": "Diese Gruppe kann hier wegen Kollisionen oder inkompatibler Spuren nicht platziert werden. Nichts wurde verschoben.",
+  "singleOnly": "Wähle für diese Aktion ein einzelnes Element oder eine Spur.",
+  "help": "Strg-Klick: Auswahl umschalten; Umschalt-Klick: Zeitbereich; Strg+A: alles. Umschalt-Ziehen im leeren Bereich: Auswahlrahmen; Strg-Ziehen: hinzufügen. Einfach ziehen: suchen. Alt-Ziehen: ohne Einrasten."
+}
 }

@@ -1382,5 +1382,11 @@
     "detachedHelp": "Audio détaché. Les flux séparés sont audibles ; le mix combiné est coupé pour éviter de doubler le son. Utilise M/S et les commandes des éléments pour choisir ce que tu écoutes.",
     "separateExport": "Exporter des pistes audio séparées et nommées",
     "shortcuts": "Espace : lecture/pause (maintenir pour accélérer) ; flèches : déplacement/volume ; Maj+Gauche/Droite : déplacement précis ; I/O : découper ; S : scinder ; F2 : renommer la piste ou le média sélectionné ; Maj+M/S : couper/solo ; Ctrl+Z : annuler ; Ctrl+Maj+Z ou Ctrl+Y : rétablir ; Ctrl+C/V : copier/coller ; Suppr : supprimer ; Échap : fermer le menu ou désélectionner."
-  }
+  },
+  "editorGestures": {
+  "selectionCount": "{count} éléments sélectionnés",
+"unsafePlacement": "Ce groupe ne peut pas être placé ici sans collision ou piste incompatible. Aucun élément déplacé.",
+  "singleOnly": "Sélectionne un seul élément ou une seule piste pour cette opération.",
+  "help": "Ctrl-clic : ajouter/retirer ; Maj-clic : plage chronologique ; Ctrl+A : tout sélectionner. Maj-glisser dans le vide : rectangle ; Ctrl-glisser : ajouter un rectangle. Glisser normalement : parcourir. Alt-glisser : sans aimantation."
+}
 }

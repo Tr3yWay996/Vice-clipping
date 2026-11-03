@@ -122,6 +122,13 @@ class ShareServerSecurityTests(unittest.IsolatedAsyncioTestCase):
         await self.client.close()
         await self.server.stop()
 
+    async def test_timeline_previews_are_local_and_reject_invalid_analysis_requests(self):
+        for route in ('test_clip/wave?offset=nan','test_clip/wave?duration=-1','test_clip/wave?stream=99'):
+            async with self.client.get(self.server.local_base_url()+'/api/editor/previews/'+route) as response:
+                self.assertEqual(response.status,400)
+        async with self.client.get(f'http://127.0.0.1:{self.public_port}/api/editor/previews/test_clip/frame') as response:
+            self.assertEqual(response.status,404)
+
     async def test_smart_audio_diagnostics_and_samples_are_local_only(self):
         router=mock.Mock()
         router.snapshot.return_value={'supported':False,'tracks':[],'applications':[]}

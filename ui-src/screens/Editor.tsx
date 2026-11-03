@@ -351,7 +351,7 @@ export function Editor() {
             </button>
           </div>
           <details className="ed-shortcuts">
-            <summary>{t('playback.shortcuts')}</summary><p>{t('audioWorkflow.shortcuts')}</p>
+            <summary>{t('playback.shortcuts')}</summary><p>{t('editorGestures.help')}</p><p>{t('audioWorkflow.shortcuts')}</p>
             <p>{t('playback.shortcutHelp')}</p>
           </details>
         </div>
@@ -391,6 +391,7 @@ export function Editor() {
           <button type="button" className="btn btn-quiet btn-sm" onClick={() => engine.fit()}>
             {t('editor.fit')}
           </button>
+          {snap.selectionCount>1?<span className="dim">{t('editorGestures.selectionCount',{count:snap.selectionCount})}</span>:null}
           <AddTrackButton onAdd={type => engine.addTrack(type)} />
         </div>
         <div className="ed-tl-scroll" ref={scrollRef}>
